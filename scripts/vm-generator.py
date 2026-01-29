@@ -385,6 +385,7 @@ Examples:
         owner=args.owner,
         expiry_days=args.expiry_days,
         purpose=args.purpose,
+        wallet_address=args.owner_wallet if web3_enabled else None,
     )
     print(f"Registered VM '{args.name}' - expires {vm['expires_at']}")
     if nft_token_id is not None:

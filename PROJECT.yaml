@@ -1,6 +1,6 @@
 # Proxmox-Terraform Project Manifest
 # Machine-readable overview for integration and automation
-# Last updated: 2026-01-29
+# Last updated: 2026-01-29 (wallet_address added to register_vm)
 
 name: proxmox-terraform
 version: "0.1.0"
@@ -133,7 +133,7 @@ python_api:
         methods:
           - allocate_vmid() -> int
           - allocate_ip() -> Optional[str]
-          - register_vm(name, vmid, ip, owner, expiry_days, purpose) -> dict
+          - register_vm(name, vmid, ip, owner, expiry_days, purpose, wallet_address=None) -> dict
           - get_vm(name) -> Optional[dict]
           - get_expired_vms(grace_days=0) -> list[dict]
           - mark_destroyed(name) -> None

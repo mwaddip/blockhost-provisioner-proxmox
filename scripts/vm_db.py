@@ -31,7 +31,8 @@ class VMDatabaseBase(ABC):
 
     @abstractmethod
     def register_vm(self, name: str, vmid: int, ip: str, owner: str,
-                    expiry_days: int, purpose: str = "") -> dict:
+                    expiry_days: int, purpose: str = "",
+                    wallet_address: Optional[str] = None) -> dict:
         """Register a new VM in the database."""
         pass
 
@@ -164,7 +165,8 @@ class VMDatabase(VMDatabaseBase):
         return db["vms"].get(name)
 
     def register_vm(self, name: str, vmid: int, ip: str, owner: str,
-                    expiry_days: int, purpose: str = "") -> dict:
+                    expiry_days: int, purpose: str = "",
+                    wallet_address: Optional[str] = None) -> dict:
         """Register a new VM in the database."""
         db = self._read_db()
 
@@ -182,7 +184,8 @@ class VMDatabase(VMDatabaseBase):
             self.fields["owner"]: owner,
             self.fields["status"]: "active",
             self.fields["created_at"]: now.isoformat(),
-            "purpose": purpose
+            "purpose": purpose,
+            "wallet_address": wallet_address
         }
 
         db["vms"][name] = vm
@@ -380,7 +383,8 @@ class MockVMDatabase(VMDatabaseBase):
         return db["vms"].get(name)
 
     def register_vm(self, name: str, vmid: int, ip: str, owner: str,
-                    expiry_days: int, purpose: str = "") -> dict:
+                    expiry_days: int, purpose: str = "",
+                    wallet_address: Optional[str] = None) -> dict:
         db = self._read_db()
 
         if name in db["vms"]:
@@ -397,7 +401,8 @@ class MockVMDatabase(VMDatabaseBase):
             "owner": owner,
             "status": "active",
             "created_at": now.isoformat(),
-            "purpose": purpose
+            "purpose": purpose,
+            "wallet_address": wallet_address
         }
 
         db["vms"][name] = vm
