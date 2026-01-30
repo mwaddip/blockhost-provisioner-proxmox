@@ -205,6 +205,12 @@ cloud_init_templates:
       - OTP_LENGTH
       - OTP_TTL
       - SSH_KEYS
+    behavior:
+      signing_page_startup: |
+        The signing page service (web3-sign.service) polls the blockchain
+        for NFT existence before starting. This handles the race condition
+        where the VM boots before the NFT is minted (minting happens after
+        terraform apply succeeds). Timeout: 5 minutes, poll interval: 5 seconds.
 
   - name: webserver
     path: cloud-init/templates/webserver.yaml
