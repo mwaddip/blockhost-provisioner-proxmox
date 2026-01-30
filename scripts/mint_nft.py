@@ -9,8 +9,10 @@ Requires:
 - Foundry (cast) installed: https://getfoundry.sh
 - pam_web3_tool built with NFT feature
 - Deployer private key with funds on the target chain
+- Signing page HTML file (from libpam-web3)
 """
 
+import base64
 import subprocess
 import sys
 from pathlib import Path
@@ -76,6 +78,35 @@ def read_deployer_key(config: dict) -> str:
     return key_file.read_text().strip()
 
 
+def load_signing_page(config: dict) -> str:
+    """
+    Load and base64-encode the signing page HTML as a data URI.
+
+    The signing page is embedded in the NFT's animation_url field and
+    extracted by VMs to serve locally for wallet authentication.
+    """
+    html_path = Path(config.get("signing_page", {}).get(
+        "html_path",
+        "/usr/share/libpam-web3/signing-page/index.html"
+    ))
+
+    # Also check local development path
+    if not html_path.exists():
+        dev_path = Path.home() / "projects/libpam-web3/signing-page/index.html"
+        if dev_path.exists():
+            html_path = dev_path
+
+    if not html_path.exists():
+        raise FileNotFoundError(
+            f"Signing page HTML not found at {html_path}. "
+            f"Install libpam-web3 or set signing_page.html_path in config."
+        )
+
+    html_content = html_path.read_text()
+    encoded = base64.b64encode(html_content.encode()).decode()
+    return f"data:text/html;base64,{encoded}"
+
+
 def mint_nft(
     owner_wallet: str,
     machine_id: str,
@@ -106,10 +137,16 @@ def mint_nft(
     encrypted = encrypt_machine_id(machine_id, server_pubkey)
     print(f"Encrypted: {encrypted[:20]}...{encrypted[-8:]}")
 
+    # Load signing page HTML as data URI
+    print("Loading signing page...")
+    signing_page_data_uri = load_signing_page(config)
+    print(f"Signing page size: {len(signing_page_data_uri)} bytes (base64)")
+
     # Read deployer key
     deployer_key = read_deployer_key(config)
 
     # Build cast command
+    # The 6th parameter (animation_url) contains the signing page as a data URI
     cmd = [
         "cast", "send",
         nft_contract,
@@ -119,17 +156,21 @@ def mint_nft(
         "0x",                               # empty secondary encrypted data
         "",                                  # empty metadata URI
         f"Access - {machine_id}",           # NFT name/description
-        "",                                  # empty image URI
+        signing_page_data_uri,              # signing page HTML as data URI
         "0",                                # expiry (0 = never)
         "--private-key", deployer_key,
         "--rpc-url", rpc_url,
     ]
 
     if dry_run:
-        # Mask the private key in output
+        # Mask sensitive data in output
         display_cmd = cmd.copy()
         pk_idx = display_cmd.index("--private-key") + 1
         display_cmd[pk_idx] = "0x***REDACTED***"
+        # Truncate the signing page data URI for display
+        for i, arg in enumerate(display_cmd):
+            if arg.startswith("data:text/html;base64,"):
+                display_cmd[i] = "data:text/html;base64,***TRUNCATED***"
         print(f"[DRY RUN] Would execute: {' '.join(display_cmd)}")
         return None
 

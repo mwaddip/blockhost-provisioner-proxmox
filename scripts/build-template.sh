@@ -42,13 +42,15 @@ WORK_IMAGE="/tmp/${IMAGE_NAME%.qcow2}-customized.qcow2"
 echo "Creating working copy for customization..."
 cp "/tmp/${IMAGE_NAME}" "${WORK_IMAGE}"
 
-# Customize the image with libpam-web3
+# Customize the image with libpam-web3 and qemu-guest-agent
 # Note: sudo required on Ubuntu because /boot/vmlinuz-* is not world-readable
-echo "Installing libpam-web3 into image..."
+echo "Installing qemu-guest-agent and libpam-web3 into image..."
 sudo virt-customize -a "${WORK_IMAGE}" \
+    --install qemu-guest-agent \
     --copy-in "${LIBPAM_WEB3_DEB}":/tmp \
     --run-command 'dpkg -i /tmp/libpam-web3_0.2.0_amd64.deb || apt-get -f install -y' \
     --run-command 'systemctl enable web3-auth-svc' \
+    --run-command 'systemctl enable qemu-guest-agent' \
     --delete /tmp/libpam-web3_0.2.0_amd64.deb
 
 IMAGE_SIZE=$(du -h "${WORK_IMAGE}" | cut -f1)

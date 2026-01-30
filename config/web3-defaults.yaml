@@ -21,6 +21,8 @@ server:
 # Signing page settings
 signing_page:
   port: 8080
+  # Path to signing page HTML (embedded in NFT during minting)
+  html_path: "/usr/share/libpam-web3/signing-page/index.html"
 
 # OTP settings
 auth:
