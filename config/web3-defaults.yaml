@@ -13,11 +13,6 @@ blockchain:
 deployer:
   private_key_file: "/etc/proxmox-automation/deployer.key"
 
-# Server ECIES public key (for encrypting machine IDs in NFTs)
-# Generate with: pam_web3_tool generate-keypair
-server:
-  public_key: "04..."
-
 # Signing page settings
 signing_page:
   port: 8080

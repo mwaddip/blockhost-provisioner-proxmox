@@ -1,6 +1,6 @@
 # Proxmox-Terraform Project Manifest
 # Machine-readable overview for integration and automation
-# Last updated: 2026-01-30 (config override via /etc/blockhost/)
+# Last updated: 2026-01-30 (updated for new NFT contract - removed serverEncrypted)
 
 name: proxmox-terraform
 version: "0.1.0"
@@ -48,6 +48,10 @@ entry_points:
       - name: --mock
         type: flag
         description: Use mock database for testing
+      - name: --user-signature
+        description: User's decrypted signature from subscription system (hex)
+      - name: --decrypt-message
+        description: Message the user signed during subscription
       - name: --skip-mint
         type: flag
         description: Skip NFT minting (for testing)
@@ -92,13 +96,18 @@ entry_points:
       - name: --owner-wallet
         description: Wallet address to receive the NFT
       - name: --machine-id
-        description: VM name/machine ID to encrypt into the NFT
+        description: VM name/machine ID (used in NFT description)
     optional_args:
+      - name: --user-encrypted
+        description: Hex-encoded encrypted connection details (default 0x)
+      - name: --decrypt-message
+        description: Message the user signed during subscription
       - name: --dry-run
         type: flag
         description: Print command without executing
     example: |
-      python3 scripts/mint_nft.py --owner-wallet 0x1234... --machine-id web-001
+      python3 scripts/mint_nft.py --owner-wallet 0x1234... --machine-id web-001 \
+        --user-encrypted 0xabc... --decrypt-message "libpam-web3:0x1234...:12345"
 
   build_template:
     script: scripts/build-template.sh
@@ -152,16 +161,15 @@ python_api:
     module: scripts/mint_nft.py
     functions:
       - name: mint_nft
-        signature: mint_nft(owner_wallet, machine_id, config=None, dry_run=False) -> Optional[str]
+        signature: mint_nft(owner_wallet, machine_id, user_encrypted="0x", decrypt_message="", config=None, dry_run=False) -> Optional[str]
         description: Mint access NFT with embedded signing page, returns transaction hash
         requires:
           - Foundry (cast CLI)
-          - pam_web3_tool for ECIES encryption
           - Deployer private key with funds
           - Signing page HTML (from libpam-web3)
       - name: load_signing_page
         signature: load_signing_page(config) -> str
-        description: Load signing page HTML and return as base64 data URI
+        description: Load signing page HTML and return as base64 (not data URI)
 
 # Configuration files
 # Config loading checks /etc/blockhost/ first, then falls back to config/
@@ -191,7 +199,6 @@ config_files:
       - blockchain.nft_contract: NFT contract address
       - blockchain.rpc_url: JSON-RPC endpoint
       - deployer.private_key_file: Path to deployer key
-      - server.public_key: Server ECIES public key
       - signing_page.html_path: Path to signing page HTML (embedded in NFT)
 
 # Cloud-init templates
@@ -264,8 +271,15 @@ workflow:
       - 3: Render cloud-init template with variables
       - 4: Generate .tf.json config
       - 5: Run terraform apply (if --apply)
-      - 6: Mint NFT to owner wallet (if successful and not --skip-mint)
-      - 7: Mark NFT as minted in database
+      - 6: If --user-signature provided, encrypt connection details (pam_web3_tool encrypt-symmetric)
+      - 7: Mint NFT to owner wallet (if successful and not --skip-mint)
+      - 8: Mark NFT as minted in database
     on_failure:
       - Mark NFT token as failed (not minted, can't reuse ID)
       - VM not created, resources released
+    encryption_workflow:
+      description: |
+        When --user-signature is provided, connection details are encrypted into the NFT.
+        The user can later decrypt them by re-signing the same message.
+      encryption_method: AES-256-GCM with key = keccak256(user_signature)
+      encrypted_data: '{"hostname": "<IP>", "port": 22, "username": "<user>"}'

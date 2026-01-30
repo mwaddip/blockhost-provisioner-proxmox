@@ -19,8 +19,17 @@ source ~/projects/sharedenv/blockhost.env
 ## Quick Reference
 
 ```bash
-# Create VM with web3 auth
+# Create VM with web3 auth (basic - no encrypted connection details)
 python3 scripts/vm-generator.py <name> --owner-wallet <0x...> [--apply]
+
+# Create VM with encrypted connection details (subscription system workflow)
+python3 scripts/vm-generator.py <name> --owner-wallet <0x...> \
+    --user-signature <0x...> --decrypt-message "libpam-web3:<address>:<nonce>" \
+    [--apply]
+
+# Mint NFT manually (with encrypted connection details)
+python3 scripts/mint_nft.py --owner-wallet <0x...> --machine-id <name> \
+    --user-encrypted <0x...> --decrypt-message "libpam-web3:<address>:<nonce>"
 
 # Garbage collect expired VMs
 python3 scripts/vm-gc.py [--execute] [--grace-days N]
@@ -100,3 +109,33 @@ NFT token IDs are sequential and tracked in the database:
 - `mark_nft_failed()` - Called if VM creation fails
 
 **Never reuse failed token IDs** - they create gaps in the sequence but prevent on-chain conflicts.
+
+## Subscription System Workflow
+
+When using the subscription system, connection details are encrypted into the NFT:
+
+1. **User signs message**: User signs `libpam-web3:<checksumAddress>:<nonce>` with their wallet
+2. **Subscription system calls vm-generator.py** with:
+   - `--owner-wallet`: User's wallet address
+   - `--user-signature`: The decrypted signature (hex)
+   - `--decrypt-message`: The original message that was signed
+3. **vm-generator.py** creates the VM, then:
+   - Encrypts connection details (hostname, port, username) using `pam_web3_tool encrypt-symmetric`
+   - Key derivation: `keccak256(signature_bytes)` → 32-byte AES key
+   - Mints NFT with encrypted data in `userEncrypted` field
+4. **User retrieves connection details**:
+   - Re-signs the same `decryptMessage` with their wallet
+   - Derives decryption key from signature
+   - Decrypts `userEncrypted` to get hostname/port/username
+
+### NFT Contract Function
+
+The new contract uses this mint signature:
+```solidity
+mint(address to, bytes userEncrypted, string decryptMessage,
+     string description, string imageUri, string animationUrlBase64, uint256 expiresAt)
+```
+
+- `userEncrypted`: AES-256-GCM encrypted JSON (or `0x` if not using encryption)
+- `decryptMessage`: Format `libpam-web3:<checksumAddress>:<nonce>`
+- `animationUrlBase64`: Signing page HTML as base64 (not data URI)

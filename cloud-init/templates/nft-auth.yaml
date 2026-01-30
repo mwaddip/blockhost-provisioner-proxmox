@@ -25,7 +25,6 @@ write_files:
     content: |
       [machine]
       id = "${VM_NAME}"
-      private_key_file = "/etc/pam_web3/server.key"
 
       [auth]
       mode = "nft"
@@ -161,10 +160,6 @@ write_files:
       UsePAM yes
 
 runcmd:
-  # Generate machine keypair
-  - pam_web3_tool generate-keypair --output /etc/pam_web3/server.key
-  - chmod 600 /etc/pam_web3/server.key
-
   # Start services
   - systemctl daemon-reload
   - systemctl enable --now web3-auth-svc

@@ -272,6 +272,10 @@ Examples:
 
     # Web3 / NFT options
     parser.add_argument("--owner-wallet", help="Wallet address to receive the access NFT")
+    parser.add_argument("--user-signature",
+                        help="User's decrypted signature from subscription system (hex)")
+    parser.add_argument("--decrypt-message",
+                        help="Message the user signed during subscription")
     parser.add_argument("--no-web3", action="store_true", help="Disable web3 auth (use standard cloud-init)")
     parser.add_argument("--skip-mint", action="store_true", help="Skip NFT minting (for testing)")
     parser.add_argument("--cloud-init", dest="cloud_init_template",
@@ -431,9 +435,37 @@ Examples:
             print(f"\nMinting NFT #{nft_token_id} to {args.owner_wallet}...")
             try:
                 web3_config = load_web3_defaults()
+
+                # Encrypt connection details if user signature provided
+                user_encrypted = "0x"
+                decrypt_message = args.decrypt_message or ""
+
+                if args.user_signature:
+                    print("Encrypting connection details...")
+                    connection_details = json.dumps({
+                        "hostname": ip_address,
+                        "port": 22,
+                        "username": args.username
+                    })
+                    encrypt_result = subprocess.run(
+                        [
+                            "pam_web3_tool", "encrypt-symmetric",
+                            "--signature", args.user_signature,
+                            "--plaintext", connection_details
+                        ],
+                        capture_output=True,
+                        text=True
+                    )
+                    if encrypt_result.returncode != 0:
+                        raise RuntimeError(f"Failed to encrypt connection details: {encrypt_result.stderr}")
+                    user_encrypted = encrypt_result.stdout.strip()
+                    print(f"Encrypted: {user_encrypted[:20]}...{user_encrypted[-8:]}")
+
                 tx_hash = mint_nft(
                     owner_wallet=args.owner_wallet,
                     machine_id=args.name,
+                    user_encrypted=user_encrypted,
+                    decrypt_message=decrypt_message,
                     config=web3_config,
                 )
                 db.mark_nft_minted(nft_token_id, args.owner_wallet)
