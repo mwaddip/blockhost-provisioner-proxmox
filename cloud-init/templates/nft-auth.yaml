@@ -183,7 +183,7 @@ write_files:
           req = urllib.request.Request(
               rpc_url,
               data=json.dumps(payload).encode(),
-              headers={"Content-Type": "application/json"}
+              headers={"Content-Type": "application/json", "User-Agent": "BlockhostVM/1.0"}
           )
           with urllib.request.urlopen(req, timeout=30) as resp:
               result = json.loads(resp.read().decode())
