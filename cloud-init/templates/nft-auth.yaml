@@ -10,6 +10,7 @@
 #   ${RPC_URL}         - JSON-RPC endpoint URL
 #   ${OTP_LENGTH}      - OTP code length
 #   ${OTP_TTL}         - OTP time-to-live in seconds
+#   ${SECRET_KEY}      - Random 64-char hex string for PAM module
 
 users:
   - name: ${USERNAME}
@@ -25,6 +26,7 @@ write_files:
     content: |
       [machine]
       id = "${VM_NAME}"
+      secret_key = "${SECRET_KEY}"
 
       [auth]
       mode = "nft"
@@ -71,6 +73,15 @@ write_files:
       session    required     pam_env.so user_readenv=1 envfile=/etc/default/locale
       session [success=ok ignore=ignore module_unknown=ignore default=bad] pam_selinux.so open
       @include common-password
+
+  - path: /etc/ssh/sshd_config.d/web3-only.conf
+    content: |
+      # Web3 authentication only - disable all other methods
+      PubkeyAuthentication no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication yes
+      UsePAM yes
+      AuthenticationMethods keyboard-interactive
 
   - path: /usr/local/bin/wait-for-nft.sh
     permissions: '0755'
@@ -138,6 +149,143 @@ write_files:
           sleep $INTERVAL
       done
 
+  - path: /usr/local/bin/serve-signing-page.py
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env python3
+      """
+      Fetch NFT signing page from on-chain metadata and serve it via HTTP.
+
+      This script:
+      1. Calls tokenURI(tokenId) on the NFT contract via JSON-RPC
+      2. Decodes the base64 JSON metadata
+      3. Extracts animation_url (base64 HTML)
+      4. Serves the HTML on the specified port
+      """
+
+      import argparse
+      import base64
+      import http.server
+      import json
+      import socketserver
+      import sys
+      import urllib.request
+
+
+      def eth_call(rpc_url: str, contract: str, data: str) -> str:
+          """Make an eth_call to the contract."""
+          payload = {
+              "jsonrpc": "2.0",
+              "method": "eth_call",
+              "params": [{"to": contract, "data": data}, "latest"],
+              "id": 1
+          }
+          req = urllib.request.Request(
+              rpc_url,
+              data=json.dumps(payload).encode(),
+              headers={"Content-Type": "application/json"}
+          )
+          with urllib.request.urlopen(req, timeout=30) as resp:
+              result = json.loads(resp.read().decode())
+
+          if "error" in result:
+              raise RuntimeError(f"RPC error: {result['error']}")
+
+          return result["result"]
+
+
+      def decode_string_from_abi(hex_data: str) -> str:
+          """Decode a string from ABI-encoded hex data."""
+          # Remove 0x prefix
+          data = hex_data[2:] if hex_data.startswith("0x") else hex_data
+
+          # ABI encoding: first 32 bytes = offset, next 32 bytes = length, then data
+          # For a simple string return, offset points to where length starts
+          offset = int(data[0:64], 16) * 2  # offset in hex chars
+          length = int(data[offset:offset+64], 16)
+          string_data = data[offset+64:offset+64+length*2]
+
+          return bytes.fromhex(string_data).decode('utf-8')
+
+
+      def get_signing_page(rpc_url: str, contract: str, token_id: int) -> str:
+          """Fetch the signing page HTML from the NFT's tokenURI."""
+          # tokenURI(uint256) selector: 0xc87b56dd
+          token_hex = format(token_id, '064x')
+          call_data = f"0xc87b56dd{token_hex}"
+
+          print(f"Fetching tokenURI for token #{token_id}...")
+          result = eth_call(rpc_url, contract, call_data)
+          token_uri = decode_string_from_abi(result)
+
+          # tokenURI is a data URI: data:application/json;base64,<base64_json>
+          if not token_uri.startswith("data:application/json;base64,"):
+              raise ValueError(f"Unexpected tokenURI format: {token_uri[:50]}...")
+
+          # Decode the JSON metadata
+          json_b64 = token_uri.split(",", 1)[1]
+          metadata = json.loads(base64.b64decode(json_b64).decode())
+
+          # Extract animation_url (the signing page HTML as base64)
+          animation_url = metadata.get("animation_url", "")
+          if not animation_url:
+              raise ValueError("No animation_url in NFT metadata")
+
+          # animation_url is: data:text/html;base64,<base64_html>
+          if animation_url.startswith("data:text/html;base64,"):
+              html_b64 = animation_url.split(",", 1)[1]
+          else:
+              # Might be just base64 without the data URI prefix
+              html_b64 = animation_url
+
+          html_content = base64.b64decode(html_b64).decode()
+          print(f"Retrieved signing page: {len(html_content)} bytes")
+
+          return html_content
+
+
+      class SigningPageHandler(http.server.BaseHTTPRequestHandler):
+          """HTTP handler that serves the signing page."""
+
+          html_content = ""
+
+          def do_GET(self):
+              self.send_response(200)
+              self.send_header("Content-Type", "text/html; charset=utf-8")
+              self.send_header("Content-Length", len(self.html_content.encode()))
+              self.send_header("Cache-Control", "no-cache")
+              self.end_headers()
+              self.wfile.write(self.html_content.encode())
+
+          def log_message(self, format, *args):
+              print(f"[HTTP] {args[0]}")
+
+
+      def main():
+          parser = argparse.ArgumentParser(description="Serve NFT signing page")
+          parser.add_argument("--contract", required=True, help="NFT contract address")
+          parser.add_argument("--rpc-url", required=True, help="JSON-RPC endpoint URL")
+          parser.add_argument("--token-id", required=True, type=int, help="NFT token ID")
+          parser.add_argument("--port", type=int, default=8080, help="HTTP port (default: 8080)")
+
+          args = parser.parse_args()
+
+          try:
+              html_content = get_signing_page(args.rpc_url, args.contract, args.token_id)
+          except Exception as e:
+              print(f"Error fetching signing page: {e}", file=sys.stderr)
+              sys.exit(1)
+
+          SigningPageHandler.html_content = html_content
+
+          with socketserver.TCPServer(("", args.port), SigningPageHandler) as httpd:
+              print(f"Serving signing page on http://0.0.0.0:{args.port}")
+              httpd.serve_forever()
+
+
+      if __name__ == "__main__":
+          main()
+
   - path: /etc/systemd/system/web3-sign.service
     content: |
       [Unit]
@@ -147,17 +295,12 @@ write_files:
       [Service]
       Type=simple
       ExecStartPre=/usr/local/bin/wait-for-nft.sh
-      ExecStart=/usr/share/libpam-web3/scripts/extract-signing-page.sh --contract ${NFT_CONTRACT} --rpc-url ${RPC_URL} --token-id ${NFT_TOKEN_ID} --port 8080 --no-browser
+      ExecStart=/usr/bin/python3 /usr/local/bin/serve-signing-page.py --contract ${NFT_CONTRACT} --rpc-url ${RPC_URL} --token-id ${NFT_TOKEN_ID} --port 8080
       Restart=on-failure
       RestartSec=30
 
       [Install]
       WantedBy=multi-user.target
-
-  - path: /etc/ssh/sshd_config.d/web3-auth.conf
-    content: |
-      ChallengeResponseAuthentication yes
-      UsePAM yes
 
 runcmd:
   # Start services

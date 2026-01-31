@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -345,6 +346,9 @@ Examples:
         if ssh_keys:
             ssh_keys_yaml = "\n".join(f"      - {key}" for key in ssh_keys)
 
+        # Generate random secret key for PAM module (32 bytes = 64 hex chars)
+        secret_key = secrets.token_hex(32)
+
         # Render cloud-init with variables
         variables = {
             "VM_NAME": args.name,
@@ -356,6 +360,7 @@ Examples:
             "RPC_URL": web3_config["blockchain"]["rpc_url"],
             "OTP_LENGTH": str(web3_config["auth"]["otp_length"]),
             "OTP_TTL": str(web3_config["auth"]["otp_ttl_seconds"]),
+            "SECRET_KEY": secret_key,
             "SSH_KEYS": f"\n{ssh_keys_yaml}" if ssh_keys_yaml else "[]",
         }
 
