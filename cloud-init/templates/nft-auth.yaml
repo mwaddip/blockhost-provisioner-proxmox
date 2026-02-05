@@ -348,7 +348,7 @@ runcmd:
 
     # Get certificate (standalone mode on port 8080)
     certbot certonly --standalone --non-interactive --agree-tos \
-        --email "admin@localhost" \
+        --register-unsafely-without-email \
         --domains "$DOMAIN" \
         --http-01-port 8080 || {
         echo "Certbot failed, continuing with HTTP"
