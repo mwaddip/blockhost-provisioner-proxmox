@@ -581,7 +581,12 @@ Examples:
                     )
                     if encrypt_result.returncode != 0:
                         raise RuntimeError(f"Failed to encrypt connection details: {encrypt_result.stderr}")
-                    user_encrypted = encrypt_result.stdout.strip()
+                    # Extract hex value from output (tool prints "Ciphertext (hex): 0x...")
+                    output = encrypt_result.stdout.strip()
+                    hex_match = re.search(r'(0x[0-9a-fA-F]+)', output)
+                    if not hex_match:
+                        raise RuntimeError(f"Could not parse encrypted output: {output[:100]}")
+                    user_encrypted = hex_match.group(1)
                     print(f"Encrypted: {user_encrypted[:20]}...{user_encrypted[-8:]}")
 
                 tx_hash = mint_nft(
