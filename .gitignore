@@ -42,8 +42,6 @@ Thumbs.db
 # Claude Code
 .claude/
 
-# S.P.E.C.I.A.L. analytical priority system (session-local)
-SPECIAL.md
 
 # Symlink
 proxmox-testserver
