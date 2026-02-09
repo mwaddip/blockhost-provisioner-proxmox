@@ -6,7 +6,7 @@ Terraform-based Proxmox VM automation with NFT web3 authentication. Creates Debi
 
 1. A Debian 12 cloud image is customized with `libpam-web3` and uploaded to Proxmox as a template (VMID 9001)
 2. `vm-generator.py` reserves an NFT token ID, generates a Terraform `.tf.json` config with cloud-init, and optionally applies it
-3. On successful VM creation, an access NFT is minted to the owner's wallet
+3. On successful VM creation, a JSON summary is printed for engine consumption. NFT minting is either handled inline (legacy) or by the engine separately (`--no-mint`)
 4. Users authenticate to SSH by signing an OTP challenge with their Ethereum wallet
 
 VMs are tracked in a JSON database with IP/VMID allocation, expiry dates, and NFT token status. Expired VMs are cleaned up by `vm-gc.py`.
@@ -56,7 +56,8 @@ Read `PROJECT.yaml` for the complete interface documentation.
 ├── CLAUDE.md               # AI assistant instructions
 ├── scripts/
 │   ├── build-template.sh   # Build Debian 12 template with libpam-web3
-│   ├── vm-generator.py     # Generate + apply VM Terraform configs
+│   ├── vm-generator.py     # Generate + apply VM Terraform configs (JSON output)
+│   ├── vm-resume.py        # Resume a suspended VM
 │   ├── vm-gc.py            # Garbage collect expired VMs
 │   └── mint_nft.py         # Mint access NFTs via Foundry cast
 ├── cloud-init/
@@ -95,16 +96,21 @@ Creates VMs with NFT-based web3 authentication:
 
 1. Reserves a sequential NFT token ID
 2. Allocates an IP address and VMID from the pool
-3. Renders cloud-init from the `nft-auth` template with the token ID in the user's GECOS field (`nft=TOKEN_ID`)
+3. Renders cloud-init from the `nft-auth` template (or uses `--cloud-init-content` for pre-rendered content)
 4. Generates a `.tf.json` Terraform config
 5. Optionally runs `terraform apply`
-6. On success, mints the access NFT to the owner's wallet
+6. On success, prints a JSON summary as the last stdout line
+7. Optionally mints the access NFT inline (legacy; skipped with `--no-mint`)
 
 ```bash
-# Generate config only
-python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234...
+# Engine-driven: create VM, skip minting (engine mints separately)
+python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... --apply --no-mint
 
-# Generate and apply (creates VM + mints NFT)
+# Engine-driven with pre-rendered cloud-init
+python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... --apply --no-mint \
+    --cloud-init-content /path/to/rendered.yaml
+
+# Legacy: create VM and mint NFT inline
 python3 scripts/vm-generator.py web-001 \
     --owner-wallet 0xAbCd... \
     --purpose "production web server" \
@@ -112,18 +118,11 @@ python3 scripts/vm-generator.py web-001 \
     --tags web production \
     --apply
 
-# With encrypted connection details (subscription system workflow)
-python3 scripts/vm-generator.py web-001 \
-    --owner-wallet 0xAbCd... \
-    --user-signature 0x... \
-    --public-secret "libpam-web3:0xAbCd...:12345" \
-    --apply
-
 # Without web3 auth
 python3 scripts/vm-generator.py web-001 --no-web3 --cloud-init webserver
 
 # Test mode (mock DB, no minting)
-python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... --mock --skip-mint --apply
+python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... --mock --no-mint --apply
 ```
 
 ### `scripts/vm-gc.py`

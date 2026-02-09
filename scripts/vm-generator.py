@@ -3,19 +3,29 @@
 VM Generator Script
 
 Generates Terraform configuration files for Proxmox VMs with NFT-based
-web3 authentication. Handles the reserve-then-mint workflow:
+web3 authentication.
 
+Default workflow (with --apply):
 1. Reserve NFT token ID
-2. Generate Terraform config with token ID in cloud-init
-3. Apply Terraform to create VM
-4. Mint NFT to owner wallet (only on success)
+2. Allocate resources (VMID, IPv4, IPv6)
+3. Generate Terraform config with cloud-init
+4. Apply Terraform to create VM
+5. Mint NFT to owner wallet (unless --no-mint)
+6. Print JSON summary as last line
+
+With --no-mint (engine-driven workflow):
+  Steps 1-4 + 6 only. The engine handles minting separately.
 
 Usage:
-    python3 vm-generator.py web-001 \
-        --owner-wallet 0x1234... \
-        --purpose "web hosting" \
-        --cpu 2 --memory 1024 \
-        --apply
+    # Engine-driven: create VM, skip minting, get JSON summary
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply --no-mint
+
+    # Legacy: create VM and mint inline
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply
+
+    # Pre-rendered cloud-init from engine
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply --no-mint \
+        --cloud-init-content /path/to/rendered.yaml
 """
 
 import argparse
@@ -295,27 +305,21 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Generate config only (with NFT auth)
-    python3 vm-generator.py web-001 --owner-wallet 0x1234...
+    # Engine-driven: create VM, skip minting, get JSON summary
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply --no-mint
 
-    # Generate and apply (reserve token, create VM, mint NFT)
+    # Legacy: create VM and mint NFT inline
     python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply
+
+    # Pre-rendered cloud-init from engine
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply --no-mint \\
+        --cloud-init-content /path/to/rendered.yaml
 
     # Without web3 auth
     python3 vm-generator.py web-001 --no-web3 --cloud-init webserver
 
-    # Test with mock database, skip actual minting
-    python3 vm-generator.py web-001 --owner-wallet 0x1234... --mock --skip-mint --apply
-
-    # Full example
-    python3 vm-generator.py web-001 \\
-        --owner-wallet 0xAbCd... \\
-        --purpose "production web server" \\
-        --owner admin \\
-        --cpu 2 --memory 2048 --disk 20 \\
-        --tags web production \\
-        --expiry-days 90 \\
-        --apply
+    # Test with mock database
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --mock --no-mint --apply
         """
     )
 
@@ -345,9 +349,12 @@ Examples:
     parser.add_argument("--public-secret",
                         help="Message the user signed during subscription")
     parser.add_argument("--no-web3", action="store_true", help="Disable web3 auth (use standard cloud-init)")
-    parser.add_argument("--skip-mint", action="store_true", help="Skip NFT minting (for testing)")
+    parser.add_argument("--no-mint", "--skip-mint", action="store_true",
+                        help="Skip NFT minting (engine handles minting separately)")
     parser.add_argument("--cloud-init", dest="cloud_init_template",
                         help="Cloud-init template name (default: nft-auth when web3 enabled)")
+    parser.add_argument("--cloud-init-content",
+                        help="Path to pre-rendered cloud-init YAML file (overrides template rendering)")
 
     args = parser.parse_args()
 
@@ -466,7 +473,15 @@ Examples:
     cloud_init_content = None
     template_name = args.cloud_init_template
 
-    if web3_enabled:
+    if args.cloud_init_content:
+        # Pre-rendered cloud-init from engine (overrides template rendering)
+        ci_path = Path(args.cloud_init_content)
+        if not ci_path.is_file():
+            print(f"Error: Cloud-init content file not found: {ci_path}")
+            sys.exit(1)
+        cloud_init_content = ci_path.read_text()
+        print(f"Using pre-rendered cloud-init from {ci_path}")
+    elif web3_enabled:
         # Default to nft-auth template
         if not template_name:
             template_name = "nft-auth"
@@ -591,8 +606,8 @@ Examples:
             except RootAgentError as e:
                 print(f"  Warning: Failed to add IPv6 host route: {e}")
 
-        # Mint NFT after successful VM creation
-        if web3_enabled and nft_token_id is not None and not args.skip_mint:
+        # Mint NFT after successful VM creation (legacy mode only)
+        if web3_enabled and nft_token_id is not None and not args.no_mint:
             print(f"\nMinting NFT #{nft_token_id} to {args.owner_wallet}...")
             try:
                 # web3_config was already loaded earlier
@@ -645,8 +660,20 @@ Examples:
                 print(f"VM was created but NFT was not minted.")
                 print(f"Token {nft_token_id} is still reserved. Retry with:")
                 print(f"  python3 scripts/mint_nft.py --owner-wallet {args.owner_wallet} --machine-id {args.name}")
-        elif web3_enabled and args.skip_mint:
-            print(f"\nSkipped NFT minting (--skip-mint). Token {nft_token_id} remains reserved.")
+        elif web3_enabled and args.no_mint:
+            print(f"\nSkipped NFT minting (--no-mint). Token {nft_token_id} remains reserved.")
+
+        # Print JSON summary for engine consumption (must be last line on stdout)
+        summary = {
+            "status": "ok",
+            "vm_name": args.name,
+            "ip": ip_address,
+            "ipv6": ipv6_address,
+            "vmid": vmid,
+            "nft_token_id": nft_token_id,
+            "username": args.username,
+        }
+        print(json.dumps(summary))
     else:
         print("\nTo apply this configuration:")
         print(f"  cd {get_terraform_dir()}")

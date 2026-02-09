@@ -41,10 +41,17 @@ source ~/projects/sharedenv/blockhost.env
 ## Quick Reference
 
 ```bash
-# Create VM with web3 auth (basic - no encrypted connection details)
+# Engine-driven: create VM, skip minting (engine mints separately)
+python3 scripts/vm-generator.py <name> --owner-wallet <0x...> --apply --no-mint
+
+# Engine-driven with pre-rendered cloud-init
+python3 scripts/vm-generator.py <name> --owner-wallet <0x...> --apply --no-mint \
+    --cloud-init-content /path/to/rendered.yaml
+
+# Legacy: create VM and mint NFT inline
 python3 scripts/vm-generator.py <name> --owner-wallet <0x...> [--apply]
 
-# Create VM with encrypted connection details (subscription system workflow)
+# Legacy: with encrypted connection details (subscription system workflow)
 python3 scripts/vm-generator.py <name> --owner-wallet <0x...> \
     --user-signature <0x...> --public-secret "libpam-web3:<address>:<nonce>" \
     [--apply]
