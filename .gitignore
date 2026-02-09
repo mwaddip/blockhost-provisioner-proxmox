@@ -41,6 +41,8 @@ Thumbs.db
 
 # Claude Code
 .claude/
+SESSION_CONTEXT.md
+SETTINGS.md
 
 
 # Symlink
