@@ -86,6 +86,16 @@ if [ ! -f "$STEP_PROXMOX" ]; then
     update-grub
 
     touch "$STEP_PROXMOX"
+
+    # Restart PVE services — they were started by dpkg triggers before
+    # pve-cluster could initialize (hostname wasn't in /etc/hosts yet).
+    # pvedaemon caches the "offline" state and needs a restart.
+    log "Restarting PVE services..."
+    systemctl reset-failed pve-cluster 2>/dev/null || true
+    systemctl restart pve-cluster
+    sleep 2
+    systemctl restart pvedaemon pveproxy pvestatd 2>/dev/null || true
+
     log "Proxmox VE installed."
 else
     log "Proxmox VE already installed, skipping."
