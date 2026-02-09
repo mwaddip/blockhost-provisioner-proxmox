@@ -19,8 +19,8 @@ See `SPECIAL.md` for full stat definitions and the priority allocation model.
 
 | Contract | Covers | Read when... |
 |----------|--------|-------------|
-| `PROVISIONER_INTERFACE.md` | The provisioner contract — manifest schema, CLI commands, wizard plugin, root agent actions, first-boot hook | Changing any interface the engine, wizard, root agent, or first-boot consumes |
-| `COMMON_INTERFACE.md` | blockhost-common's public API — config, vm_db, root_agent, cloud_init | Using any import from `blockhost.*` |
+| `facts/PROVISIONER_INTERFACE.md` | The provisioner contract — manifest schema, CLI commands, wizard plugin, root agent actions, first-boot hook | Changing any interface the engine, wizard, root agent, or first-boot consumes |
+| `facts/COMMON_INTERFACE.md` | blockhost-common's public API — config, vm_db, root_agent, cloud_init | Using any import from `blockhost.*` |
 
 **This is the reference implementation.** The libvirt provisioner is being built against the same contract. If the contract needs to change, coordinate with the main session — both provisioners must stay in sync.
 
