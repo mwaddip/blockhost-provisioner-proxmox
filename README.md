@@ -60,11 +60,6 @@ Read `PROJECT.yaml` for the complete interface documentation.
 │   ├── vm-resume.py        # Resume a suspended VM
 │   ├── vm-gc.py            # Garbage collect expired VMs
 │   └── mint_nft.py         # Mint access NFTs via Foundry cast
-├── cloud-init/
-│   └── templates/
-│       ├── nft-auth.yaml   # NFT auth cloud-init (default)
-│       ├── webserver.yaml  # Basic webserver cloud-init
-│       └── devbox.yaml     # Dev environment cloud-init
 ├── accounting/
 │   └── mock-db.json        # Mock database for testing
 ├── provider.tf.json        # Terraform provider config

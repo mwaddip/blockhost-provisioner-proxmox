@@ -36,8 +36,8 @@ import secrets
 import subprocess
 import sys
 from pathlib import Path
-from string import Template
 
+from blockhost.cloud_init import render_cloud_init
 from blockhost.config import (
     get_terraform_dir,
     load_broker_allocation,
@@ -105,18 +105,6 @@ def load_terraform_vars() -> dict:
     return variables
 
 
-def get_cloud_init_template_dirs() -> list[Path]:
-    """Return list of directories to search for cloud-init templates."""
-    return [
-        # Installed package location
-        Path("/usr/share/blockhost/cloud-init/templates"),
-        # Development location (relative to script)
-        Path(__file__).parent.parent / "cloud-init" / "templates",
-        # Current directory fallback
-        Path("cloud-init/templates"),
-    ]
-
-
 def sanitize_resource_name(name: str) -> str:
     """Convert VM name to valid Terraform resource name."""
     return re.sub(r"[^a-zA-Z0-9_]", "_", name)
@@ -135,34 +123,6 @@ def load_ssh_keys() -> list[str]:
             keys.append(path.read_text().strip())
 
     return keys
-
-
-def render_cloud_init(template_name: str, variables: dict) -> str:
-    """
-    Render a cloud-init template with variable substitution.
-
-    Uses ${VAR_NAME} syntax for placeholders.
-    """
-    template_path = None
-    search_dirs = get_cloud_init_template_dirs()
-
-    for template_dir in search_dirs:
-        candidate = template_dir / f"{template_name}.yaml"
-        if candidate.exists():
-            template_path = candidate
-            break
-
-    if not template_path:
-        searched = "\n".join(f"  - {d}" for d in search_dirs)
-        raise FileNotFoundError(
-            f"Cloud-init template '{template_name}.yaml' not found. Searched:\n{searched}"
-        )
-
-    content = template_path.read_text()
-
-    # Use safe_substitute to leave unresolved variables as-is
-    template = Template(content)
-    return template.safe_substitute(variables)
 
 
 def generate_tf_config(
@@ -520,11 +480,11 @@ Examples:
             "SSH_KEYS": f"\n{ssh_keys_yaml}" if ssh_keys_yaml else "[]",
         }
 
-        cloud_init_content = render_cloud_init(template_name, variables)
+        cloud_init_content = render_cloud_init(f"{template_name}.yaml", variables)
     elif template_name:
         # Non-web3 cloud-init template (e.g., webserver, devbox)
         try:
-            cloud_init_content = render_cloud_init(template_name, {})
+            cloud_init_content = render_cloud_init(f"{template_name}.yaml", {})
         except FileNotFoundError:
             print(f"Warning: Cloud-init template '{template_name}' not found")
 

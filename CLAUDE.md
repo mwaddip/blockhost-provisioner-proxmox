@@ -74,7 +74,7 @@ python3 scripts/vm-gc.py [--execute] [--grace-days N]
 1. **New/changed CLI arguments** - Update the `entry_points` section
 2. **New/changed Python functions** - Update the `python_api` section
 3. **New/changed config options** - Update the `config_files` section
-4. **New cloud-init templates** - Update the `cloud_init_templates` section
+4. **New cloud-init templates** - These belong in `blockhost-common`; update `external_modules` section if needed
 5. **Changed workflow/behavior** - Update the `workflow` section
 
 ### Update Checklist
@@ -94,9 +94,9 @@ If yes to any, update `PROJECT.yaml` accordingly.
 | `PROJECT.yaml` | Machine-readable API spec (KEEP UPDATED) |
 | `scripts/vm-generator.py` | Main entry point for VM creation |
 | `scripts/vm-gc.py` | Garbage collection for expired VMs |
+| `scripts/vm-resume.py` | Resume a suspended VM |
 | `scripts/mint_nft.py` | NFT minting via Foundry cast |
 | `scripts/build-template.sh` | Proxmox template builder |
-| `cloud-init/templates/nft-auth.yaml` | Cloud-init template for web3-authenticated VMs |
 
 ### From blockhost-common package
 
@@ -105,6 +105,7 @@ If yes to any, update `PROJECT.yaml` accordingly.
 | `blockhost.config` | Config loading (load_db_config, load_web3_config, get_terraform_dir) |
 | `blockhost.vm_db` | Database abstraction (VMDatabase, MockVMDatabase, get_database) |
 | `blockhost.root_agent` | Root agent client (qm_start/stop/shutdown/destroy, ip6_route_add/del) |
+| `blockhost.cloud_init` | Cloud-init template rendering (render_cloud_init, find_template) |
 | `/etc/blockhost/db.yaml` | Database and terraform_dir config |
 | `/etc/blockhost/web3-defaults.yaml` | Blockchain/NFT settings |
 

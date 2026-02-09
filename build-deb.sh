@@ -155,7 +155,6 @@ chmod 755 "${PKG}/DEBIAN/postrm"
 mkdir -p "${PKG}/usr/bin"
 mkdir -p "${PKG}/usr/lib/python3/dist-packages/blockhost"
 mkdir -p "${PKG}/usr/lib/systemd/system"
-mkdir -p "${PKG}/usr/share/blockhost/cloud-init/templates"
 mkdir -p "${PKG}/usr/share/doc/blockhost-provisioner"
 
 # Install executables to /usr/bin/
@@ -180,8 +179,7 @@ cp "${SCRIPT_DIR}/systemd/blockhost-gc.timer" "${PKG}/usr/lib/systemd/system/"
 cp "${SCRIPT_DIR}/scripts/vm-generator.py" "${PKG}/usr/lib/python3/dist-packages/blockhost/vm_generator.py"
 cp "${SCRIPT_DIR}/scripts/mint_nft.py" "${PKG}/usr/lib/python3/dist-packages/blockhost/mint_nft.py"
 
-# Install cloud-init templates
-cp "${SCRIPT_DIR}/cloud-init/templates/"*.yaml "${PKG}/usr/share/blockhost/cloud-init/templates/"
+# Cloud-init templates are shipped by blockhost-common
 
 # Install documentation
 cp "${SCRIPT_DIR}/README.md" "${PKG}/usr/share/doc/blockhost-provisioner/"
