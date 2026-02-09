@@ -115,6 +115,7 @@ If yes to any, update `PROJECT.yaml` accordingly.
 | `scripts/provisioner-detect.sh` | Detect Proxmox VE host |
 | `blockhost/provisioner_proxmox/wizard.py` | Wizard plugin (Blueprint, finalization, summary) |
 | `provisioner-hooks/first-boot.sh` | First-boot hook (installs Proxmox, Terraform) |
+| `root-agent-actions/qm.py` | Root agent QM actions plugin (qm-start/stop/create/set/etc.) |
 
 ### From blockhost-common package
 

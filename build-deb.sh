@@ -215,6 +215,10 @@ mkdir -p "${PKG}/usr/share/blockhost/provisioner-hooks"
 cp "${SCRIPT_DIR}/provisioner-hooks/first-boot.sh" "${PKG}/usr/share/blockhost/provisioner-hooks/first-boot.sh"
 chmod 755 "${PKG}/usr/share/blockhost/provisioner-hooks/first-boot.sh"
 
+# Install root agent action modules
+mkdir -p "${PKG}/usr/share/blockhost/root-agent-actions"
+cp "${SCRIPT_DIR}/root-agent-actions/qm.py" "${PKG}/usr/share/blockhost/root-agent-actions/"
+
 # Install Python modules to /usr/lib/python3/dist-packages/blockhost/
 cp "${SCRIPT_DIR}/scripts/vm-generator.py" "${PKG}/usr/lib/python3/dist-packages/blockhost/vm_generator.py"
 cp "${SCRIPT_DIR}/scripts/mint_nft.py" "${PKG}/usr/lib/python3/dist-packages/blockhost/mint_nft.py"

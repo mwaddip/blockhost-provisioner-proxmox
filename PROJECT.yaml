@@ -1,6 +1,6 @@
 # Blockhost Provisioner Project Manifest
 # Machine-readable overview for integration and automation
-# Last updated: 2026-02-07 (provisioner manifest, stub commands, engine abstraction layer)
+# Last updated: 2026-02-09 (root agent QM action module, provisioner abstraction)
 
 name: blockhost-provisioner
 version: "0.2.0"
@@ -304,6 +304,7 @@ provisioner_manifest:
     detect: blockhost-provisioner-detect
     wizard_module: blockhost.provisioner_proxmox.wizard
     finalization_steps: [token, terraform, bridge, template]
+  root_agent_actions: /usr/share/blockhost/root-agent-actions/qm.py
 
 # First-boot hook (called by main first-boot.sh)
 first_boot_hook:
@@ -324,6 +325,30 @@ first_boot_hook:
     - .step-hostname
     - .step-proxmox
     - .step-terraform
+
+# Root agent action module (loaded by root agent daemon)
+root_agent_actions:
+  file: root-agent-actions/qm.py
+  install_path: /usr/share/blockhost/root-agent-actions/qm.py
+  description: |
+    Proxmox QM actions for the root agent daemon. Loaded as a plugin module
+    at daemon startup. Provides privileged VM operations (create, start, stop,
+    destroy, set config, import disk, convert to template).
+  actions:
+    qm-start: Start a VM (qm start <vmid>)
+    qm-stop: Force-stop a VM (qm stop <vmid>)
+    qm-shutdown: Gracefully shut down a VM (qm shutdown <vmid>)
+    qm-destroy: Destroy a VM and purge disk (qm destroy <vmid> --purge)
+    qm-create: Create a VM with validated arguments
+    qm-importdisk: Import a disk image into a VM
+    qm-set: Set VM configuration with allowlisted keys
+    qm-template: Convert a VM to a template
+  security:
+    - All vmids validated against VMID_MIN/VMID_MAX range
+    - qm-create args restricted to QM_CREATE_ALLOWED_ARGS allowlist
+    - qm-set keys restricted to QM_SET_ALLOWED_KEYS allowlist
+    - qm-importdisk image paths restricted to /var/lib/blockhost/ and /tmp/
+    - qm-importdisk storage names validated against STORAGE_RE regex
 
 # Wizard plugin (loaded by main app's installer)
 wizard_plugin:
@@ -431,13 +456,18 @@ privilege_separation:
     via blockhost.root_agent client functions. Terraform runs directly as
     blockhost user (HTTP API auth, working dir owned by blockhost).
   unprivileged_user: blockhost
+  root_agent_actions_module: root-agent-actions/qm.py
   root_agent_operations:
     - qm_start: Start a VM
     - qm_stop: Force-stop a VM
     - qm_shutdown: Gracefully shut down a VM
     - qm_destroy: Destroy a VM
-    - ip6_route_add: Add IPv6 host route
-    - ip6_route_del: Remove IPv6 host route
+    - qm_create: Create a VM with validated arguments
+    - qm_importdisk: Import disk image into a VM
+    - qm_set: Set VM configuration (allowlisted keys)
+    - qm_template: Convert a VM to a template
+    - ip6_route_add: Add IPv6 host route (shipped by blockhost-common)
+    - ip6_route_del: Remove IPv6 host route (shipped by blockhost-common)
   direct_as_blockhost:
     - terraform: HTTP API auth, terraform_dir owned by blockhost
     - cast: Reads deployer key via group perm 0640
