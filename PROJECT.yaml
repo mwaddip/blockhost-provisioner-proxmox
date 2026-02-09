@@ -2,7 +2,7 @@
 # Machine-readable overview for integration and automation
 # Last updated: 2026-02-09 (root agent QM action module, provisioner abstraction)
 
-name: blockhost-provisioner
+name: blockhost-provisioner-proxmox
 version: "0.2.0"
 description: |
   Terraform-based Proxmox VM automation with NFT web3 authentication.
@@ -434,7 +434,7 @@ integration:
       Install both packages, then configure /etc/blockhost/ config files.
     setup_steps:
       - Install blockhost-common package (provides config modules)
-      - Install blockhost-provisioner package (provides this package)
+      - Install blockhost-provisioner-proxmox package (provides this package)
       - Install libpam-web3-tools package (provides signing page)
       - Run init-server.sh from blockhost-engine to generate keys and config
       - Configure /etc/blockhost/db.yaml with terraform_dir path

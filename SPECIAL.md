@@ -85,7 +85,7 @@ src/ab/                   S6  P6  E5  C7  I6  A5  L5
   Simple CRUD on a JSON file. Don't overthink it.
 ```
 
-### blockhost-provisioner
+### blockhost-provisioner-proxmox
 
 ```
 default (submodule)       S9  P7  E9  C5  I7  A6  L7

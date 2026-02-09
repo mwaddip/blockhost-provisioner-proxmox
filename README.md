@@ -1,4 +1,4 @@
-# blockhost-provisioner
+# blockhost-provisioner-proxmox
 
 Terraform-based Proxmox VM automation with NFT web3 authentication. Creates Debian 12 VMs from a cloud-init template that includes [libpam-web3](https://github.com/mwaddip/libpam-web3) for Ethereum wallet-based SSH login.
 
@@ -26,7 +26,7 @@ VMs are tracked in a JSON database with IP/VMID allocation, expiry dates, and NF
 # Install dependencies
 sudo dpkg -i blockhost-common_*.deb
 sudo dpkg -i libpam-web3-tools_*.deb
-sudo dpkg -i blockhost-provisioner_*.deb
+sudo dpkg -i blockhost-provisioner-proxmox_*.deb
 
 # Initialize server (generates keys and config)
 sudo /path/to/blockhost-engine/scripts/init-server.sh

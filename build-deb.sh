@@ -1,17 +1,17 @@
 #!/bin/bash
-# Build blockhost-provisioner .deb package
+# Build blockhost-provisioner-proxmox .deb package
 #
 # Creates a Debian package with:
 # - CLI tools in /usr/bin/
 # - Python modules in /usr/lib/python3/dist-packages/blockhost/
 # - Cloud-init templates in /usr/share/blockhost/
-# - Documentation in /usr/share/doc/blockhost-provisioner/
+# - Documentation in /usr/share/doc/blockhost-provisioner-proxmox/
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION="0.1.0"
-PACKAGE_NAME="blockhost-provisioner_${VERSION}_all"
+PACKAGE_NAME="blockhost-provisioner-proxmox_${VERSION}_all"
 BUILD_DIR="${SCRIPT_DIR}/build"
 
 echo "Building ${PACKAGE_NAME}.deb..."
@@ -26,7 +26,7 @@ PKG="${BUILD_DIR}/pkg"
 mkdir -p "${PKG}/DEBIAN"
 
 cat > "${PKG}/DEBIAN/control" << 'EOF'
-Package: blockhost-provisioner
+Package: blockhost-provisioner-proxmox
 Version: 0.1.0
 Section: admin
 Priority: optional
@@ -61,7 +61,7 @@ EOF
 # Create postinst script
 cat > "${PKG}/DEBIAN/postinst" << 'EOF'
 #!/bin/bash
-# Post-installation script for blockhost-provisioner
+# Post-installation script for blockhost-provisioner-proxmox
 
 set -e
 
@@ -81,7 +81,7 @@ case "$1" in
 
         echo ""
         echo "============================================================"
-        echo "  blockhost-provisioner installed successfully!"
+        echo "  blockhost-provisioner-proxmox installed successfully!"
         echo "============================================================"
         echo ""
         echo "Available commands:"
@@ -115,7 +115,7 @@ case "$1" in
         echo "  4. Build template: blockhost-build-template"
         echo "  5. Create VM: blockhost-vm-create myvm --owner-wallet 0x... --apply"
         echo ""
-        echo "See /usr/share/doc/blockhost-provisioner/ for documentation."
+        echo "See /usr/share/doc/blockhost-provisioner-proxmox/ for documentation."
         echo "============================================================"
         ;;
 esac
@@ -169,7 +169,7 @@ mkdir -p "${PKG}/usr/bin"
 mkdir -p "${PKG}/usr/lib/python3/dist-packages/blockhost"
 mkdir -p "${PKG}/usr/lib/systemd/system"
 mkdir -p "${PKG}/usr/share/blockhost"
-mkdir -p "${PKG}/usr/share/doc/blockhost-provisioner"
+mkdir -p "${PKG}/usr/share/doc/blockhost-provisioner-proxmox"
 
 # Install executables to /usr/bin/
 # Copy with new names and make executable
@@ -233,14 +233,14 @@ cp "${SCRIPT_DIR}/blockhost/provisioner_proxmox/templates/provisioner_proxmox/"*
 # Cloud-init templates are shipped by blockhost-common
 
 # Install documentation
-cp "${SCRIPT_DIR}/README.md" "${PKG}/usr/share/doc/blockhost-provisioner/"
-cp "${SCRIPT_DIR}/PROJECT.yaml" "${PKG}/usr/share/doc/blockhost-provisioner/"
+cp "${SCRIPT_DIR}/README.md" "${PKG}/usr/share/doc/blockhost-provisioner-proxmox/"
+cp "${SCRIPT_DIR}/PROJECT.yaml" "${PKG}/usr/share/doc/blockhost-provisioner-proxmox/"
 
 # Create copyright file (required for Debian packages)
-cat > "${PKG}/usr/share/doc/blockhost-provisioner/copyright" << 'EOF'
+cat > "${PKG}/usr/share/doc/blockhost-provisioner-proxmox/copyright" << 'EOF'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: blockhost-provisioner
-Source: https://github.com/blockhost/blockhost-provisioner
+Upstream-Name: blockhost-provisioner-proxmox
+Source: https://github.com/blockhost/blockhost-provisioner-proxmox
 
 Files: *
 Copyright: 2024-2026 Blockhost Team
@@ -265,8 +265,8 @@ License: MIT
 EOF
 
 # Create changelog (required for Debian packages)
-cat > "${PKG}/usr/share/doc/blockhost-provisioner/changelog.Debian" << EOF
-blockhost-provisioner (0.1.0) unstable; urgency=low
+cat > "${PKG}/usr/share/doc/blockhost-provisioner-proxmox/changelog.Debian" << EOF
+blockhost-provisioner-proxmox (0.1.0) unstable; urgency=low
 
   * Initial release
   * VM provisioning with NFT-based web3 authentication
@@ -278,7 +278,7 @@ blockhost-provisioner (0.1.0) unstable; urgency=low
 
  -- Blockhost Team <blockhost@example.com>  $(date -R)
 EOF
-gzip -9 -n "${PKG}/usr/share/doc/blockhost-provisioner/changelog.Debian"
+gzip -9 -n "${PKG}/usr/share/doc/blockhost-provisioner-proxmox/changelog.Debian"
 
 # Build the package
 echo "Building package..."

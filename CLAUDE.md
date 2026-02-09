@@ -1,4 +1,4 @@
-# Claude Instructions for blockhost-provisioner
+# Claude Instructions for blockhost-provisioner-proxmox
 
 ## SPECIAL.md (HIGHEST PRIORITY)
 
@@ -15,7 +15,7 @@ See `SPECIAL.md` for full stat definitions and the priority allocation model.
 
 ## Project Scope
 
-**This Claude session only modifies blockhost-provisioner.** Changes to dependency packages (blockhost-common, blockhost-broker, libpam-web3-tools) should be done in their respective Claude sessions with separate prompts.
+**This Claude session only modifies blockhost-provisioner-proxmox.** Changes to dependency packages (blockhost-common, blockhost-broker, libpam-web3-tools) should be done in their respective Claude sessions with separate prompts.
 
 ## Project Overview
 
@@ -154,7 +154,7 @@ python3 scripts/vm-generator.py test-vm --owner-wallet 0x1234... --mock --skip-m
 
 When installed as a package:
 1. Install `blockhost-common` first (provides config and database modules)
-2. Install `blockhost-provisioner` (this package)
+2. Install `blockhost-provisioner-proxmox` (this package)
 3. Install `libpam-web3-tools` (provides signing page and pam_web3_tool)
 4. Configure `/etc/blockhost/db.yaml` with correct `terraform_dir`
 5. Configure `/etc/blockhost/web3-defaults.yaml` with contract details
