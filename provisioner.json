@@ -1,0 +1,34 @@
+{
+  "name": "proxmox",
+  "version": "0.1.0",
+  "display_name": "Proxmox VE + Terraform",
+
+  "commands": {
+    "create":         "blockhost-vm-create",
+    "destroy":        "blockhost-vm-destroy",
+    "start":          "blockhost-vm-start",
+    "stop":           "blockhost-vm-stop",
+    "kill":           "blockhost-vm-kill",
+    "status":         "blockhost-vm-status",
+    "list":           "blockhost-vm-list",
+    "metrics":        "blockhost-vm-metrics",
+    "throttle":       "blockhost-vm-throttle",
+    "build-template": "blockhost-build-template",
+    "gc":             "blockhost-vm-gc",
+    "resume":         "blockhost-vm-resume"
+  },
+
+  "setup": {
+    "first_boot_hook": "/usr/share/blockhost/provisioner-hooks/first-boot.sh",
+    "detect":          "blockhost-provisioner-detect",
+    "wizard_module":   "blockhost.provisioner_proxmox.wizard",
+    "finalization_steps": ["token", "terraform", "bridge", "template"]
+  },
+
+  "root_agent_actions": "/usr/share/blockhost/root-agent-actions/qm.py",
+
+  "config_keys": {
+    "session_key": "proxmox",
+    "provisioner_config": ["terraform_dir", "vmid_range"]
+  }
+}

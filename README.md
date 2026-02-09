@@ -54,12 +54,22 @@ Read `PROJECT.yaml` for the complete interface documentation.
 .
 ├── PROJECT.yaml            # Machine-readable API spec
 ├── CLAUDE.md               # AI assistant instructions
+├── provisioner.json          # Provisioner manifest for engine integration
 ├── scripts/
 │   ├── build-template.sh   # Build Debian 12 template with libpam-web3
 │   ├── vm-generator.py     # Generate + apply VM Terraform configs (JSON output)
+│   ├── vm-destroy.sh       # Destroy a VM (terraform + cleanup)
+│   ├── vm-start.sh         # Start a VM via root agent
+│   ├── vm-stop.sh          # Gracefully shut down a VM
+│   ├── vm-kill.sh          # Force-stop a VM
+│   ├── vm-status.sh        # Print VM status
+│   ├── vm-list.sh          # List all VMs
+│   ├── vm-metrics.sh       # VM metrics (stub)
+│   ├── vm-throttle.sh      # VM throttling (stub)
 │   ├── vm-resume.py        # Resume a suspended VM
 │   ├── vm-gc.py            # Garbage collect expired VMs
-│   └── mint_nft.py         # Mint access NFTs via Foundry cast
+│   ├── mint_nft.py         # Mint access NFTs via Foundry cast
+│   └── provisioner-detect.sh # Detect Proxmox VE host
 ├── accounting/
 │   └── mock-db.json        # Mock database for testing
 ├── provider.tf.json        # Terraform provider config
@@ -140,6 +150,20 @@ python3 scripts/vm-gc.py --execute --suspend-only
 
 # Check timer status
 systemctl status blockhost-gc.timer
+```
+
+### VM lifecycle commands
+
+Standalone commands for managing individual VMs, used by the engine via the provisioner manifest:
+
+```bash
+blockhost-vm-start web-001      # Start a VM
+blockhost-vm-stop web-001       # Gracefully shut down
+blockhost-vm-kill web-001       # Force-stop
+blockhost-vm-destroy web-001    # Destroy (terraform + cleanup)
+blockhost-vm-status web-001     # Print status
+blockhost-vm-list               # List all VMs (text)
+blockhost-vm-list --json        # List all VMs (JSON)
 ```
 
 ### `scripts/mint_nft.py`

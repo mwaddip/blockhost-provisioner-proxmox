@@ -41,11 +41,18 @@ Description: Proxmox VM provisioning with NFT-based web3 authentication
  .
  Includes:
   - blockhost-vm-create: Create VMs with NFT authentication
+  - blockhost-vm-destroy: Destroy a VM
+  - blockhost-vm-start: Start a VM
+  - blockhost-vm-stop: Gracefully shut down a VM
+  - blockhost-vm-kill: Force-stop a VM
+  - blockhost-vm-status: Print VM status
+  - blockhost-vm-list: List all VMs
   - blockhost-vm-gc: Garbage collect expired VMs (two-phase: suspend then destroy)
   - blockhost-vm-resume: Resume a suspended VM
   - blockhost-mint-nft: Mint access credential NFTs
   - blockhost-build-template: Build Proxmox VM template
-  - Cloud-init templates for web3-authenticated VMs
+  - blockhost-provisioner-detect: Detect Proxmox VE host
+  - Provisioner manifest for engine integration
   - Systemd timer for daily garbage collection
  .
  Note: Terraform and Foundry (cast) must be installed manually.
@@ -79,6 +86,12 @@ case "$1" in
         echo ""
         echo "Available commands:"
         echo "  blockhost-vm-create      - Create VMs with NFT authentication"
+        echo "  blockhost-vm-destroy     - Destroy a VM"
+        echo "  blockhost-vm-start       - Start a VM"
+        echo "  blockhost-vm-stop        - Gracefully shut down a VM"
+        echo "  blockhost-vm-kill        - Force-stop a VM"
+        echo "  blockhost-vm-status      - Print VM status"
+        echo "  blockhost-vm-list        - List all VMs"
         echo "  blockhost-vm-gc          - Garbage collect expired VMs"
         echo "  blockhost-vm-resume      - Resume a suspended VM"
         echo "  blockhost-mint-nft       - Mint access credential NFTs"
@@ -155,25 +168,47 @@ chmod 755 "${PKG}/DEBIAN/postrm"
 mkdir -p "${PKG}/usr/bin"
 mkdir -p "${PKG}/usr/lib/python3/dist-packages/blockhost"
 mkdir -p "${PKG}/usr/lib/systemd/system"
+mkdir -p "${PKG}/usr/share/blockhost"
 mkdir -p "${PKG}/usr/share/doc/blockhost-provisioner"
 
 # Install executables to /usr/bin/
 # Copy with new names and make executable
 cp "${SCRIPT_DIR}/scripts/vm-generator.py" "${PKG}/usr/bin/blockhost-vm-create"
+cp "${SCRIPT_DIR}/scripts/vm-destroy.sh" "${PKG}/usr/bin/blockhost-vm-destroy"
+cp "${SCRIPT_DIR}/scripts/vm-start.sh" "${PKG}/usr/bin/blockhost-vm-start"
+cp "${SCRIPT_DIR}/scripts/vm-stop.sh" "${PKG}/usr/bin/blockhost-vm-stop"
+cp "${SCRIPT_DIR}/scripts/vm-kill.sh" "${PKG}/usr/bin/blockhost-vm-kill"
+cp "${SCRIPT_DIR}/scripts/vm-status.sh" "${PKG}/usr/bin/blockhost-vm-status"
+cp "${SCRIPT_DIR}/scripts/vm-list.sh" "${PKG}/usr/bin/blockhost-vm-list"
+cp "${SCRIPT_DIR}/scripts/vm-metrics.sh" "${PKG}/usr/bin/blockhost-vm-metrics"
+cp "${SCRIPT_DIR}/scripts/vm-throttle.sh" "${PKG}/usr/bin/blockhost-vm-throttle"
 cp "${SCRIPT_DIR}/scripts/vm-gc.py" "${PKG}/usr/bin/blockhost-vm-gc"
 cp "${SCRIPT_DIR}/scripts/vm-resume.py" "${PKG}/usr/bin/blockhost-vm-resume"
 cp "${SCRIPT_DIR}/scripts/mint_nft.py" "${PKG}/usr/bin/blockhost-mint-nft"
 cp "${SCRIPT_DIR}/scripts/build-template.sh" "${PKG}/usr/bin/blockhost-build-template"
+cp "${SCRIPT_DIR}/scripts/provisioner-detect.sh" "${PKG}/usr/bin/blockhost-provisioner-detect"
 
 chmod 755 "${PKG}/usr/bin/blockhost-vm-create"
+chmod 755 "${PKG}/usr/bin/blockhost-vm-destroy"
+chmod 755 "${PKG}/usr/bin/blockhost-vm-start"
+chmod 755 "${PKG}/usr/bin/blockhost-vm-stop"
+chmod 755 "${PKG}/usr/bin/blockhost-vm-kill"
+chmod 755 "${PKG}/usr/bin/blockhost-vm-status"
+chmod 755 "${PKG}/usr/bin/blockhost-vm-list"
+chmod 755 "${PKG}/usr/bin/blockhost-vm-metrics"
+chmod 755 "${PKG}/usr/bin/blockhost-vm-throttle"
 chmod 755 "${PKG}/usr/bin/blockhost-vm-gc"
 chmod 755 "${PKG}/usr/bin/blockhost-vm-resume"
 chmod 755 "${PKG}/usr/bin/blockhost-mint-nft"
 chmod 755 "${PKG}/usr/bin/blockhost-build-template"
+chmod 755 "${PKG}/usr/bin/blockhost-provisioner-detect"
 
 # Install systemd units
 cp "${SCRIPT_DIR}/systemd/blockhost-gc.service" "${PKG}/usr/lib/systemd/system/"
 cp "${SCRIPT_DIR}/systemd/blockhost-gc.timer" "${PKG}/usr/lib/systemd/system/"
+
+# Install provisioner manifest
+cp "${SCRIPT_DIR}/provisioner.json" "${PKG}/usr/share/blockhost/provisioner.json"
 
 # Install Python modules to /usr/lib/python3/dist-packages/blockhost/
 cp "${SCRIPT_DIR}/scripts/vm-generator.py" "${PKG}/usr/lib/python3/dist-packages/blockhost/vm_generator.py"

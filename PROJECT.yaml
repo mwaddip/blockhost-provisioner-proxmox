@@ -1,6 +1,6 @@
 # Blockhost Provisioner Project Manifest
 # Machine-readable overview for integration and automation
-# Last updated: 2026-02-07 (provisioner abstraction: --no-mint, --cloud-init-content, JSON output)
+# Last updated: 2026-02-07 (provisioner manifest, stub commands, engine abstraction layer)
 
 name: blockhost-provisioner
 version: "0.2.0"
@@ -209,6 +209,101 @@ entry_points:
       - libpam-web3 .deb package
     example: |
       PROXMOX_HOST=root@pve ./scripts/build-template.sh
+
+  destroy_vm:
+    script: scripts/vm-destroy.sh
+    description: Destroy a VM — removes terraform config, applies, cleans up IPv6 route
+    required_args:
+      - name: vm_name
+        position: 1
+        description: Name of the VM to destroy
+    example: |
+      blockhost-vm-destroy web-001
+
+  start_vm:
+    script: scripts/vm-start.sh
+    description: Start a VM via root agent (qm start)
+    required_args:
+      - name: vm_name
+        position: 1
+        description: Name of the VM to start
+
+  stop_vm:
+    script: scripts/vm-stop.sh
+    description: Gracefully shut down a VM via root agent (qm shutdown)
+    required_args:
+      - name: vm_name
+        position: 1
+        description: Name of the VM to stop
+
+  kill_vm:
+    script: scripts/vm-kill.sh
+    description: Force-stop a VM via root agent (qm stop)
+    required_args:
+      - name: vm_name
+        position: 1
+        description: Name of the VM to kill
+
+  vm_status:
+    script: scripts/vm-status.sh
+    description: Print the status of a VM (active, suspended, destroyed, unknown)
+    required_args:
+      - name: vm_name
+        position: 1
+        description: Name of the VM to query
+
+  vm_list:
+    script: scripts/vm-list.sh
+    description: List all VMs (text or JSON output)
+    optional_args:
+      - name: --json
+        type: flag
+        description: Output as JSON array
+    example: |
+      blockhost-vm-list
+      blockhost-vm-list --json
+
+  vm_metrics:
+    script: scripts/vm-metrics.sh
+    description: VM metrics (stub — future functionality)
+    note: Exits 0, not yet implemented
+
+  vm_throttle:
+    script: scripts/vm-throttle.sh
+    description: VM resource throttling (stub — future functionality)
+    note: Exits 0, not yet implemented
+
+  provisioner_detect:
+    script: scripts/provisioner-detect.sh
+    description: Detect whether this host has Proxmox VE (checks for pvesh)
+    outputs:
+      - Exit code 0 if Proxmox detected, 1 otherwise
+
+# Provisioner manifest (engine integration)
+provisioner_manifest:
+  file: provisioner.json
+  install_path: /usr/share/blockhost/provisioner.json
+  description: |
+    Declares what commands this provisioner provides, how its wizard integrates,
+    what finalization steps it owns, and where its root agent actions live.
+    One active provisioner per host. Read by blockhost-engine's ProvisionerDispatcher.
+  commands:
+    create: blockhost-vm-create
+    destroy: blockhost-vm-destroy
+    start: blockhost-vm-start
+    stop: blockhost-vm-stop
+    kill: blockhost-vm-kill
+    status: blockhost-vm-status
+    list: blockhost-vm-list
+    metrics: blockhost-vm-metrics (stub)
+    throttle: blockhost-vm-throttle (stub)
+    build-template: blockhost-build-template
+    gc: blockhost-vm-gc
+    resume: blockhost-vm-resume
+  setup:
+    detect: blockhost-provisioner-detect
+    wizard_module: blockhost.provisioner_proxmox.wizard
+    finalization_steps: [token, terraform, bridge, template]
 
 # Python module API (for programmatic use)
 python_api:

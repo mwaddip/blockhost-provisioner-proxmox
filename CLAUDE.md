@@ -60,6 +60,14 @@ python3 scripts/vm-generator.py <name> --owner-wallet <0x...> \
 python3 scripts/mint_nft.py --owner-wallet <0x...> --machine-id <name> \
     --user-encrypted <0x...> --public-secret "libpam-web3:<address>:<nonce>"
 
+# VM lifecycle commands
+blockhost-vm-start <name>
+blockhost-vm-stop <name>
+blockhost-vm-kill <name>
+blockhost-vm-destroy <name>
+blockhost-vm-status <name>
+blockhost-vm-list [--json]
+
 # Garbage collect expired VMs
 python3 scripts/vm-gc.py [--execute] [--grace-days N]
 
@@ -92,11 +100,19 @@ If yes to any, update `PROJECT.yaml` accordingly.
 | File | Purpose |
 |------|---------|
 | `PROJECT.yaml` | Machine-readable API spec (KEEP UPDATED) |
+| `provisioner.json` | Provisioner manifest for engine integration |
 | `scripts/vm-generator.py` | Main entry point for VM creation |
+| `scripts/vm-destroy.sh` | Destroy a VM (terraform + cleanup) |
+| `scripts/vm-start.sh` | Start a VM via root agent |
+| `scripts/vm-stop.sh` | Gracefully shut down a VM |
+| `scripts/vm-kill.sh` | Force-stop a VM |
+| `scripts/vm-status.sh` | Print VM status |
+| `scripts/vm-list.sh` | List all VMs |
 | `scripts/vm-gc.py` | Garbage collection for expired VMs |
 | `scripts/vm-resume.py` | Resume a suspended VM |
 | `scripts/mint_nft.py` | NFT minting via Foundry cast |
 | `scripts/build-template.sh` | Proxmox template builder |
+| `scripts/provisioner-detect.sh` | Detect Proxmox VE host |
 
 ### From blockhost-common package
 
