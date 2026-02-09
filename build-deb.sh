@@ -214,6 +214,13 @@ cp "${SCRIPT_DIR}/provisioner.json" "${PKG}/usr/share/blockhost/provisioner.json
 cp "${SCRIPT_DIR}/scripts/vm-generator.py" "${PKG}/usr/lib/python3/dist-packages/blockhost/vm_generator.py"
 cp "${SCRIPT_DIR}/scripts/mint_nft.py" "${PKG}/usr/lib/python3/dist-packages/blockhost/mint_nft.py"
 
+# Install provisioner wizard plugin
+WIZARD_PKG_DIR="${PKG}/usr/lib/python3/dist-packages/blockhost/provisioner_proxmox"
+mkdir -p "${WIZARD_PKG_DIR}/templates/provisioner_proxmox"
+cp "${SCRIPT_DIR}/blockhost/provisioner_proxmox/__init__.py" "${WIZARD_PKG_DIR}/"
+cp "${SCRIPT_DIR}/blockhost/provisioner_proxmox/wizard.py" "${WIZARD_PKG_DIR}/"
+cp "${SCRIPT_DIR}/blockhost/provisioner_proxmox/templates/provisioner_proxmox/"*.html "${WIZARD_PKG_DIR}/templates/provisioner_proxmox/"
+
 # Cloud-init templates are shipped by blockhost-common
 
 # Install documentation

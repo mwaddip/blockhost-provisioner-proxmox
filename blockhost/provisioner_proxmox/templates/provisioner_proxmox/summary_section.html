@@ -1,0 +1,28 @@
+<!-- Proxmox Summary Section (rendered by provisioner plugin) -->
+<div class="summary-section">
+    <h3>Proxmox</h3>
+    <div class="summary-item">
+        <span class="summary-label">Node</span>
+        <span class="summary-value">{{ provisioner_summary.node }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Storage</span>
+        <span class="summary-value">{{ provisioner_summary.storage }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Network Bridge</span>
+        <span class="summary-value">{{ provisioner_summary.bridge }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">VMID Range</span>
+        <span class="summary-value">{{ provisioner_summary.vmid_start }} - {{ provisioner_summary.vmid_end }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">IP Pool</span>
+        <span class="summary-value">{{ provisioner_summary.ip_start }} - {{ provisioner_summary.ip_end }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Expiry Grace Period</span>
+        <span class="summary-value">{{ provisioner_summary.gc_grace_days }} days</span>
+    </div>
+</div>

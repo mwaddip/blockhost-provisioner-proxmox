@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% from "macros/wizard_steps.html" import step_bar %}
+
+{% block title %}Proxmox Configuration - BlockHost Installer{% endblock %}
+
+{% block content %}
+{{ step_bar('proxmox') }}
+
+<div class="card">
+    <h2>Proxmox Configuration</h2>
+    <p class="text-muted mb-2">Configure Proxmox VE integration for automatic VM provisioning.</p>
+
+    <form id="proxmox-form" method="POST" action="{{ url_for('provisioner_proxmox.wizard_proxmox') }}">
+        <!-- Auto-detected values (hidden inputs for form submission) -->
+        <input type="hidden" name="pve_api_url" value="https://127.0.0.1:8006">
+        <input type="hidden" name="pve_user" value="root@pam">
+
+        <div class="form-section">
+            <h3>Proxmox Node</h3>
+            <div class="form-group">
+                <label for="pve_node">Node Name</label>
+                <input type="text" id="pve_node" name="pve_node"
+                       value="{{ detected.node_name or '' }}" readonly>
+                <p class="text-muted mt-1" style="font-size: 0.75rem;">
+                    Auto-detected from the local Proxmox installation.
+                </p>
+            </div>
+        </div>
+
+        <!-- Storage and Network -->
+        <div class="form-section">
+            <h3>Resources</h3>
+            <div class="two-col">
+                <div class="form-group">
+                    <label for="pve_storage">Storage Pool</label>
+                    <select id="pve_storage" name="pve_storage">
+                        {% for storage in detected.storages %}
+                        <option value="{{ storage.name }}"
+                                {% if storage.name == 'local-lvm' %}selected{% endif %}>
+                            {{ storage.name }} ({{ storage.type }}) - {{ storage.avail_human }}
+                        </option>
+                        {% else %}
+                        <option value="local-lvm">local-lvm (default)</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="pve_bridge">Network Bridge</label>
+                    <select id="pve_bridge" name="pve_bridge">
+                        {% for bridge in detected.bridges %}
+                        <option value="{{ bridge }}"
+                                {% if bridge == 'vmbr0' %}selected{% endif %}>
+                            {{ bridge }}
+                        </option>
+                        {% else %}
+                        <option value="vmbr0">vmbr0 (default)</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- VM Template Configuration -->
+        <div class="form-section">
+            <h3>VM Template</h3>
+            <p class="text-muted mb-2" style="font-size: 0.875rem;">
+                Configure the base VM template used for provisioning.
+            </p>
+
+            <div class="form-group">
+                <label for="template_vmid">Template VMID</label>
+                <input type="number" id="template_vmid" name="template_vmid"
+                       value="9001" min="100" max="999999">
+                <p class="text-muted mt-1" style="font-size: 0.75rem;">
+                    VMID for the base Debian template with libpam-web3. Default: 9001
+                </p>
+            </div>
+        </div>
+
+        <!-- VM Pool Configuration -->
+        <div class="form-section">
+            <h3>VM Pool Configuration</h3>
+            <p class="text-muted mb-2" style="font-size: 0.875rem;">
+                Define the resource pools for automatically provisioned VMs.
+            </p>
+
+            <div class="two-col">
+                <div class="form-group">
+                    <label for="vmid_start">VMID Range Start</label>
+                    <input type="number" id="vmid_start" name="vmid_start"
+                           value="100" min="100" max="999">
+                </div>
+                <div class="form-group">
+                    <label for="vmid_end">VMID Range End</label>
+                    <input type="number" id="vmid_end" name="vmid_end"
+                           value="999" min="100" max="999999">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="gc_grace_days">Expiry Grace Period (days)</label>
+                <input type="number" id="gc_grace_days" name="gc_grace_days"
+                       value="7" min="1" max="90">
+                <p class="text-muted mt-1" style="font-size: 0.75rem;">
+                    When a subscription expires, the VM is suspended for this many days before permanent deletion.
+                    Users can renew during this period to restore their VM.
+                </p>
+            </div>
+
+            <div class="form-group">
+                <label for="ip_network">VM Network</label>
+                <input type="text" id="ip_network" name="ip_network"
+                       value="192.168.122.0/24"
+                       placeholder="192.168.122.0/24">
+                <p class="text-muted mt-1" style="font-size: 0.75rem;">
+                    The network range for VM private IPs (internal communication).
+                </p>
+            </div>
+
+            <div class="two-col">
+                <div class="form-group">
+                    <label for="ip_start">IP Pool Start</label>
+                    <input type="text" id="ip_start" name="ip_start"
+                           value="192.168.122.200"
+                           placeholder="192.168.122.200">
+                </div>
+                <div class="form-group">
+                    <label for="ip_end">IP Pool End</label>
+                    <input type="text" id="ip_end" name="ip_end"
+                           value="192.168.122.250"
+                           placeholder="192.168.122.250">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="gateway">Gateway</label>
+                <input type="text" id="gateway" name="gateway"
+                       value="192.168.122.1"
+                       placeholder="192.168.122.1">
+            </div>
+        </div>
+
+        <div class="flex justify-between" style="margin-top: 2rem;">
+            <a href="{{ url_for('wizard_blockchain') }}" class="btn btn-secondary">Back</a>
+            <button type="submit" class="btn btn-primary">Continue</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Validate VMID range
+document.getElementById('proxmox-form').addEventListener('submit', function(e) {
+    const vmidStart = parseInt(document.getElementById('vmid_start').value);
+    const vmidEnd = parseInt(document.getElementById('vmid_end').value);
+
+    if (vmidStart >= vmidEnd) {
+        e.preventDefault();
+        alert('VMID range start must be less than end.');
+        return;
+    }
+
+    // Validate IP addresses
+    const ipStart = document.getElementById('ip_start').value;
+    const ipEnd = document.getElementById('ip_end').value;
+    const gateway = document.getElementById('gateway').value;
+
+    const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (!ipRegex.test(ipStart) || !ipRegex.test(ipEnd) || !ipRegex.test(gateway)) {
+        e.preventDefault();
+        alert('Please enter valid IP addresses.');
+        return;
+    }
+});
+
+// Auto-update gateway when IP network changes
+document.getElementById('ip_network').addEventListener('change', function() {
+    const network = this.value.split('/')[0];
+    const parts = network.split('.');
+    if (parts.length === 4) {
+        parts[3] = '1';
+        document.getElementById('gateway').value = parts.join('.');
+
+        // Also update IP pool suggestions
+        parts[3] = '200';
+        document.getElementById('ip_start').value = parts.join('.');
+        parts[3] = '250';
+        document.getElementById('ip_end').value = parts.join('.');
+    }
+});
+</script>
+{% endblock %}

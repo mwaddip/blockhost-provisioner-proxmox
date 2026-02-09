@@ -113,6 +113,7 @@ If yes to any, update `PROJECT.yaml` accordingly.
 | `scripts/mint_nft.py` | NFT minting via Foundry cast |
 | `scripts/build-template.sh` | Proxmox template builder |
 | `scripts/provisioner-detect.sh` | Detect Proxmox VE host |
+| `blockhost/provisioner_proxmox/wizard.py` | Wizard plugin (Blueprint, finalization, summary) |
 
 ### From blockhost-common package
 

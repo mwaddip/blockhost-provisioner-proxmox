@@ -305,6 +305,25 @@ provisioner_manifest:
     wizard_module: blockhost.provisioner_proxmox.wizard
     finalization_steps: [token, terraform, bridge, template]
 
+# Wizard plugin (loaded by main app's installer)
+wizard_plugin:
+  module: blockhost.provisioner_proxmox.wizard
+  source: blockhost/provisioner_proxmox/wizard.py
+  install_path: /usr/lib/python3/dist-packages/blockhost/provisioner_proxmox/
+  provides:
+    - blueprint: Flask Blueprint registered by main app at startup
+    - get_finalization_steps(): Returns [(step_id, display_name, callable), ...]
+    - get_summary_data(session_data): Returns provisioner-specific summary dict
+    - get_summary_template(): Returns template name for summary section
+  finalization_steps:
+    - token: Create Proxmox API token via pveum
+    - terraform: Configure bpg/proxmox provider, generate SSH key, terraform init
+    - bridge: Ensure network bridge exists (pvesh create, fallback to ip commands)
+    - template: Build VM template with libpam-web3 via build-template.sh
+  templates:
+    - provisioner_proxmox/proxmox.html: Wizard step for Proxmox configuration
+    - provisioner_proxmox/summary_section.html: Summary page fragment
+
 # Python module API (for programmatic use)
 python_api:
   mint_nft:
