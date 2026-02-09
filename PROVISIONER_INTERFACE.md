@@ -586,15 +586,15 @@ Documented for awareness. These exist in the current implementation.
 
 ### `blockhost-mint-nft` not in manifest dispatch
 
-The engine hardcodes `blockhost-mint-nft` at `handlers/index.ts:324` instead of resolving through `getCommand("mint-nft")`. The manifest has no `"mint-nft"` verb. This command is arguably provisioner-agnostic (it's chain-side, not hypervisor-side) — a case for moving it to blockhost-common.
+The engine hardcodes `blockhost-mint-nft` at `handlers/index.ts:324` instead of resolving through `getCommand("mint-nft")`. The manifest has no `"mint-nft"` verb. Decision: minting belongs in the engine, not in provisioners. This is not a contract violation — it's correctly engine-owned.
 
-### Hardcoded `/opt/` paths in app.py
+### ~~Hardcoded `/opt/` paths in app.py~~ (FIXED)
 
-Lines 1648 and 3127 reference `/opt/blockhost-provisioner-proxmox/scripts/build-template.sh` as fallbacks. Line 3127 checks `/usr/bin/blockhost-build-template` first. Both should use the installed command exclusively.
+~~Lines 1648 and 3127 reference `/opt/blockhost-provisioner-proxmox/scripts/build-template.sh` as fallbacks.~~ Fixed: both now resolve `build-template` from the provisioner manifest. One remaining instance in `provisioner_proxmox/wizard.py:649` (submodule — prompt sent).
 
 ### Transitional summary fallback
 
-`app.py` line 637 has a hardcoded Proxmox dict as fallback when no provisioner module is loaded. This transitional code can be removed now that the plugin system is stable.
+`app.py` line 637 has a hardcoded Proxmox dict as fallback when no provisioner module is loaded. This should be removed — no-provisioner is not a valid state, and the hardcoded dict actively poisons custom provisioner development.
 
 ### Stub commands in manifest
 
