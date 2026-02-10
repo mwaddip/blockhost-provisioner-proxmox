@@ -56,6 +56,23 @@ def wizard_proxmox():
 # --- Summary ---
 
 
+def get_ui_params(session_data: dict) -> dict:
+    """Return Proxmox-specific UI parameters for wizard templates.
+
+    Templates consume these via prov_ui.<key> | default(...).
+    """
+    network = session_data.get("network", {})
+    wan_ip = network.get("ip", "")
+    return {
+        "management_url": f"https://{wan_ip}:8006" if wan_ip else "",
+        "management_label": "Open Proxmox",
+        "knock_ports_default": "22, 8006",
+        "knock_description": "Define a secret command name that opens SSH and Proxmox ports temporarily.",
+        "storage_hint": "Review detected storage devices. Proxmox VE is already installed on your system disk.",
+        "storage_extra_hint": "Additional disks can be configured for VM storage in Proxmox after setup completes.",
+    }
+
+
 def get_summary_data(session_data: dict) -> dict:
     """Return provisioner-specific summary data."""
     proxmox = session_data.get("proxmox", {})
@@ -82,14 +99,14 @@ def get_summary_template() -> str:
 def get_finalization_steps() -> list[tuple]:
     """Return provisioner finalization steps.
 
-    Each tuple: (step_id, display_name, callable)
+    Each tuple: (step_id, display_name, callable[, hint])
     The callable signature: func(config: dict) -> tuple[bool, Optional[str]]
     """
     return [
         ("token", "Creating Proxmox API token", finalize_token),
         ("terraform", "Configuring Terraform provider", finalize_terraform),
         ("bridge", "Configuring network bridge", finalize_bridge),
-        ("template", "Building VM template", finalize_template),
+        ("template", "Building VM template", finalize_template, "(this may take several minutes)"),
     ]
 
 

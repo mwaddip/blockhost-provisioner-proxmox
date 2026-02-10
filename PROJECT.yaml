@@ -337,7 +337,8 @@ wizard_plugin:
   install_path: /usr/lib/python3/dist-packages/blockhost/provisioner_proxmox/
   provides:
     - blueprint: Flask Blueprint registered by main app at startup
-    - get_finalization_steps(): Returns [(step_id, display_name, callable), ...]
+    - get_ui_params(session_data): Returns provisioner-specific UI parameters for templates
+    - get_finalization_steps(): Returns [(step_id, display_name, callable[, hint]), ...]
     - get_summary_data(session_data): Returns provisioner-specific summary dict
     - get_summary_template(): Returns template name for summary section
   finalization_steps:
