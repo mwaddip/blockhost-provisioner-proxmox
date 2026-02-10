@@ -94,9 +94,6 @@ default (submodule)       S9  P7  E9  C5  I7  A6  L7
 scripts/vm-gc.py          S8  P6  E9  C4  I6  A5  L8
   Destroys things. Better be sure. Edge cases in cleanup are data loss.
 
-scripts/mint_nft.py       S7  P8  E7  C4  I6  A6  L7
-  Writes to chain permanently. Key handling matters.
-
 scripts/build-template.sh S7  P6  E8  C4  I5  A5  L6
   Runs once. Must be idempotent. Not much can go subtly wrong.
 ```

@@ -68,7 +68,6 @@ Read `PROJECT.yaml` for the complete interface documentation.
 │   ├── vm-throttle.sh      # VM throttling (stub)
 │   ├── vm-resume.py        # Resume a suspended VM
 │   ├── vm-gc.py            # Garbage collect expired VMs
-│   ├── mint_nft.py         # Mint access NFTs via Foundry cast
 │   └── provisioner-detect.sh # Detect Proxmox VE host
 ├── accounting/
 │   └── mock-db.json        # Mock database for testing
@@ -166,26 +165,6 @@ blockhost-vm-list               # List all VMs (text)
 blockhost-vm-list --json        # List all VMs (JSON)
 ```
 
-### `scripts/mint_nft.py`
-
-Mints access credential NFTs after VM creation:
-
-- Embeds the signing page HTML from libpam-web3-tools
-- Optionally embeds encrypted connection details (userEncrypted, publicSecret)
-- Calls the NFT contract's `mint()` function via Foundry's `cast send`
-
-```bash
-# Standalone minting
-python3 scripts/mint_nft.py --owner-wallet 0x1234... --machine-id web-001
-
-# With encrypted connection details
-python3 scripts/mint_nft.py --owner-wallet 0x1234... --machine-id web-001 \
-    --user-encrypted 0xabc... --public-secret "libpam-web3:0x1234...:12345"
-
-# Dry run
-python3 scripts/mint_nft.py --owner-wallet 0x1234... --machine-id web-001 --dry-run
-```
-
 ## Configuration
 
 Configuration files are provided by **blockhost-common** in `/etc/blockhost/`:
@@ -200,11 +179,10 @@ Database configuration: production DB file path, terraform_dir, IP pool range, V
 
 ## NFT auth flow
 
-1. User connects via SSH
-2. PAM module (`pam_web3.so`) checks the user's GECOS field for `nft=TOKEN_ID`
-3. PAM queries `web3-auth-svc` to verify the connecting wallet owns that NFT on-chain
-4. User is redirected to the signing page (`http://VM_IP:8080`) to sign an OTP challenge
-5. PAM verifies the signature and grants access
+1. VM boots, `web3-sign` service starts serving a static signing page from `/usr/share/libpam-web3/signing-page/index.html`
+2. User visits `https://VM_IP:8080`, signs challenge with their Ethereum wallet
+3. PAM module (`pam_web3.so`) validates the signature against NFT ownership on-chain
+4. Access granted if the wallet owns the VM's NFT token
 
 ## Setup
 

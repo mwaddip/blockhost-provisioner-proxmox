@@ -364,7 +364,7 @@ external_modules:
       - blockhost.root_agent: Root agent client (qm_start, qm_stop, qm_shutdown, qm_destroy, ip6_route_add, ip6_route_del, RootAgentError)
       - blockhost.cloud_init: Template rendering (render_cloud_init, find_template, list_templates)
     cloud_init_templates:
-      - nft-auth.yaml (NFT authentication with web3-auth-svc and signing page)
+      - nft-auth.yaml (NFT authentication with web3-auth-svc)
       - webserver.yaml (basic webserver with nginx)
       - devbox.yaml (development environment with common tools)
     config_files:
@@ -382,11 +382,11 @@ dependencies:
   packages:
     - blockhost-common: Config, database, and root agent modules (including IPv6 allocation)
     - blockhost-broker: IPv6 tunnel broker (broker-client creates /etc/blockhost/broker-allocation.json)
-    - libpam-web3-tools: Signing page HTML, pam_web3_tool CLI
+    - libpam-web3-tools: pam_web3_tool CLI, signing page (served from local filesystem)
   system:
     - terraform: ">=1.0"
     - libguestfs-tools: For virt-customize
-    - foundry: For cast CLI (NFT minting)
+    - foundry: For cast CLI (used by engine's mint_nft)
   python:
     - pyyaml: YAML parsing (from blockhost-common)
   proxmox:
@@ -489,7 +489,6 @@ workflow:
         IPv6 addresses are allocated from the broker pool (/etc/blockhost/broker-allocation.json).
         If the broker allocation file exists, VMs get both private IPv4 and public IPv6.
         The NFT encrypted connection details use IPv6 (public) when available.
-        The signing page URL also uses IPv6 for internet accessibility.
       gateway: |
         IPv6 gateway is computed as the first host address in the /120 prefix (offset +1).
         This is where the Proxmox host has its address on vmbr0.
@@ -499,7 +498,8 @@ workflow:
         destroyed via vm-gc.py (ip6_route_del).
     encryption_workflow:
       description: |
-        When --user-signature is provided, connection details are encrypted into the NFT.
+        When --user-signature is provided, connection details are ECIES-encrypted
+        and stored on-chain in the NFT's userEncrypted field.
         The user can later decrypt them by re-signing the same message.
       encryption_method: AES-256-GCM with key = keccak256(user_signature)
       encrypted_data: '{"hostname": "<IPv6 or IPv4>", "port": 22, "username": "<user>"}'

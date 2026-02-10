@@ -7,7 +7,6 @@
 | Path pattern | Profile | Extra focus areas |
 |---|---|---|
 | `scripts/vm-gc.py` | S8 P6 E9 C4 I6 A5 L8 | Robustness (destroys resources), reliability (must be idempotent), edge cases (cleanup failures = data loss) |
-| `scripts/mint_nft.py` | S7 P8 E7 C4 I6 A6 L7 | Security (permanent chain writes, key handling) |
 | `scripts/build-template.sh` | S7 P6 E8 C4 I5 A5 L6 | Reliability (must be idempotent, runs once) |
 | everything else | S9 P7 E9 C5 I7 A6 L7 | Robustness + reliability (VM lifecycle is unforgiving) |
 
@@ -131,7 +130,7 @@ If yes to any, update `PROJECT.yaml` accordingly.
 
 | Module/File | Purpose |
 |-------------|---------|
-| `blockhost.config` | Config loading (load_db_config, load_web3_config, get_terraform_dir) |
+| `blockhost.config` | Config loading (load_db_config, load_web3_config, load_broker_allocation) |
 | `blockhost.vm_db` | Database abstraction (VMDatabase, MockVMDatabase, get_database) |
 | `blockhost.root_agent` | Root agent client (qm_start/stop/shutdown/destroy, ip6_route_add/del) |
 | `blockhost.cloud_init` | Cloud-init template rendering (render_cloud_init, find_template) |
@@ -189,9 +188,18 @@ NFT token IDs are sequential and tracked in the database:
 
 This applies to every commit, not just large changes. Small changes (renamed flags, new imports, changed defaults) can silently make docs wrong.
 
+## VM Authentication Flow
+
+1. VM boots with libpam-web3 installed via cloud-init template
+2. `web3-sign` service starts, serving static signing page from `/usr/share/libpam-web3/signing-page/index.html`
+3. User visits `https://VM_IP:8080`, signs challenge with their wallet
+4. PAM module validates signature against NFT ownership on-chain
+
+The signing page is a generic static HTML file shipped by the libpam-web3 package. It is not embedded in the NFT and not customized per-VM.
+
 ## Subscription System Workflow
 
-When using the subscription system, connection details are encrypted into the NFT:
+When using the subscription system, ECIES-encrypted connection details are stored on-chain in the NFT's `userEncrypted` field:
 
 1. **User signs message**: User signs `libpam-web3:<checksumAddress>:<nonce>` with their wallet
 2. **Subscription system calls vm-generator.py** with:
@@ -209,7 +217,6 @@ When using the subscription system, connection details are encrypted into the NF
 
 ### NFT Contract Function
 
-The new contract uses this mint signature:
 ```solidity
 mint(address to, bytes userEncrypted, string publicSecret,
      string description, string imageUri, string animationUrlBase64, uint256 expiresAt)
@@ -217,4 +224,4 @@ mint(address to, bytes userEncrypted, string publicSecret,
 
 - `userEncrypted`: AES-256-GCM encrypted JSON (or `0x` if not using encryption)
 - `publicSecret`: Format `libpam-web3:<checksumAddress>:<nonce>`
-- `animationUrlBase64`: Signing page HTML as base64 (not data URI)
+- `animationUrlBase64`: Empty string (signing page is served from local filesystem, not embedded in NFT)

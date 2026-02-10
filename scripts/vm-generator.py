@@ -624,7 +624,7 @@ Examples:
                 print(f"\nWarning: NFT minting failed: {e}")
                 print(f"VM was created but NFT was not minted.")
                 print(f"Token {nft_token_id} is still reserved. Retry with:")
-                print(f"  python3 scripts/mint_nft.py --owner-wallet {args.owner_wallet} --machine-id {args.name}")
+                print(f"  blockhost-mint-nft --owner-wallet {args.owner_wallet} --machine-id {args.name}")
         elif web3_enabled and args.no_mint:
             print(f"\nSkipped NFT minting (--no-mint). Token {nft_token_id} remains reserved.")
 
@@ -646,7 +646,7 @@ Examples:
         print(f"  terraform apply")
         if web3_enabled:
             print(f"\nAfter apply, mint the NFT:")
-            print(f"  python3 scripts/mint_nft.py --owner-wallet {args.owner_wallet} --machine-id {args.name}")
+            print(f"  blockhost-mint-nft --owner-wallet {args.owner_wallet} --machine-id {args.name}")
 
 
 if __name__ == "__main__":
