@@ -220,7 +220,7 @@ def _detect_proxmox_resources() -> dict:
 def finalize_token(config: dict) -> tuple[bool, Optional[str]]:
     """Create Proxmox API token."""
     try:
-        proxmox = config.get("proxmox", {})
+        proxmox = config.get("provisioner", {})
         user = proxmox.get("user", "root@pam")
 
         # Create API token using pveum
@@ -283,7 +283,7 @@ def finalize_terraform(config: dict) -> tuple[bool, Optional[str]]:
         config_dir = Path("/etc/blockhost")
         config_dir.mkdir(parents=True, exist_ok=True)
 
-        proxmox = config.get("proxmox", {})
+        proxmox = config.get("provisioner", {})
         node_name = proxmox.get("node", socket.gethostname())
 
         # Generate SSH keypair for Terraform to use
@@ -428,7 +428,7 @@ def finalize_bridge(config: dict) -> tuple[bool, Optional[str]]:
     On nested/VM installs or custom setups, it may not exist.
     """
     try:
-        proxmox = config.get("proxmox", {})
+        proxmox = config.get("provisioner", {})
         bridge_name = proxmox.get("bridge", "vmbr0")
         node_name = proxmox.get("node", socket.gethostname())
 
@@ -633,7 +633,7 @@ def finalize_bridge(config: dict) -> tuple[bool, Optional[str]]:
 def finalize_template(config: dict) -> tuple[bool, Optional[str]]:
     """Build VM template with libpam-web3."""
     try:
-        proxmox = config.get("proxmox", {})
+        proxmox = config.get("provisioner", {})
         template_vmid = proxmox.get("template_vmid", 9001)
         storage = proxmox.get("storage", "local-lvm")
 
