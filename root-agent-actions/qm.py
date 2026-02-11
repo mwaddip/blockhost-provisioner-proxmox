@@ -8,13 +8,23 @@ Shipped by blockhost-provisioner, loaded by the root agent daemon from
 import os
 
 from _common import (
-    QM_CREATE_ALLOWED_ARGS,
-    QM_SET_ALLOWED_KEYS,
     STORAGE_RE,
     log,
     run,
     validate_vmid,
 )
+
+# Proxmox-specific allowlists — these belong in the provisioner, not in common.
+QM_CREATE_ALLOWED_ARGS = frozenset({
+    '--scsi0', '--boot', '--ide2', '--agent', '--serial0', '--vga',
+    '--net0', '--memory', '--cores', '--name', '--ostype', '--scsihw',
+    '--sockets', '--cpu', '--numa', '--machine', '--bios',
+})
+
+QM_SET_ALLOWED_KEYS = frozenset({
+    'scsi0', 'boot', 'ide2', 'agent', 'serial0', 'vga',
+    'net0', 'memory', 'cores', 'name', 'ostype', 'scsihw',
+})
 
 
 def _handle_qm_simple(params, subcommand, extra_args=(), timeout=120):
