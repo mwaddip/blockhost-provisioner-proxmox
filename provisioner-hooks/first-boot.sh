@@ -21,6 +21,13 @@ log() {
     echo "$msg" >> "$LOG_FILE"
 }
 
+# Signal that this provisioner manages its own bridge.
+# Proxmox creates vmbr0 during wizard finalization via pvesh.
+# This tells first-boot.sh Step 3a to skip br0 creation.
+mkdir -p /etc/blockhost
+touch /etc/blockhost/bridge-managed
+log "Wrote /etc/blockhost/bridge-managed — Proxmox manages vmbr0"
+
 #
 # Step: Configure hostname for Proxmox
 #
