@@ -47,6 +47,7 @@ def wizard_proxmox():
             "ip_end": request.form.get("ip_end"),
             "gateway": request.form.get("gateway"),
             "gc_grace_days": int(request.form.get("gc_grace_days", 7)),
+            "terraform_dir": "/var/lib/blockhost/terraform",
         }
         return redirect(url_for("wizard_ipv6"))
 
