@@ -191,11 +191,11 @@ This applies to every commit, not just large changes. Small changes (renamed fla
 ## VM Authentication Flow
 
 1. VM boots with libpam-web3 installed via cloud-init template
-2. `web3-sign` service starts, serving static signing page from `/usr/share/libpam-web3/signing-page/index.html`
-3. User visits `https://VM_IP:8080`, signs challenge with their wallet
+2. `web3-auth-svc` serves signing page over HTTPS (port 8443, self-signed TLS)
+3. User visits `https://VM_IP:8443`, signs challenge with their wallet
 4. PAM module validates signature against NFT ownership on-chain
 
-The signing page is a generic static HTML file shipped by the libpam-web3 package. It is not embedded in the NFT and not customized per-VM.
+The signing page is served by web3-auth-svc over HTTPS. With callback support (v0.6.0+), the page auto-fills OTP and machine name — users just sign and press Enter.
 
 ## Subscription System Workflow
 

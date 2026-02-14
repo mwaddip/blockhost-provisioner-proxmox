@@ -179,8 +179,8 @@ Database configuration: production DB file path, terraform_dir, IP pool range, V
 
 ## NFT auth flow
 
-1. VM boots, `web3-sign` service starts serving a static signing page from `/usr/share/libpam-web3/signing-page/index.html`
-2. User visits `https://VM_IP:8080`, signs challenge with their Ethereum wallet
+1. VM boots, `web3-auth-svc` starts serving signing page over HTTPS (port 8443, self-signed TLS)
+2. User visits `https://VM_IP:8443`, signs challenge with their Ethereum wallet
 3. PAM module (`pam_web3.so`) validates the signature against NFT ownership on-chain
 4. Access granted if the wallet owns the VM's NFT token
 
