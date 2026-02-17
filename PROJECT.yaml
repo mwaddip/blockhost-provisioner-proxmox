@@ -304,7 +304,7 @@ provisioner_manifest:
   setup:
     detect: blockhost-provisioner-detect
     wizard_module: blockhost.provisioner_proxmox.wizard
-    finalization_steps: [token, terraform, bridge, template]
+    finalization_steps: [token, terraform, db_config, bridge, template]
   root_agent_actions: /usr/share/blockhost/root-agent-actions/qm.py
 
 # First-boot hook (called by main first-boot.sh)
@@ -367,6 +367,7 @@ wizard_plugin:
   finalization_steps:
     - token: Create Proxmox API token via pveum
     - terraform: Configure bpg/proxmox provider, generate SSH key, terraform init
+    - db_config: Write /etc/blockhost/db.yaml with provisioner runtime config
     - bridge: Ensure network bridge exists (pvesh create, fallback to ip commands)
     - template: Build VM template with libpam-web3 via build-template.sh
   templates:

@@ -3,7 +3,7 @@ Proxmox VE wizard plugin for BlockHost installer.
 
 Provides:
 - Flask Blueprint with /wizard/proxmox route
-- Finalization steps: token, terraform, bridge, template
+- Finalization steps: token, terraform, db_config, bridge, template
 - Summary data for the summary page
 """
 
@@ -14,6 +14,8 @@ import socket
 import subprocess
 from pathlib import Path
 from typing import Optional
+
+import yaml
 
 from flask import Blueprint, redirect, render_template, request, session, url_for
 
@@ -106,6 +108,7 @@ def get_finalization_steps() -> list[tuple]:
     return [
         ("token", "Creating Proxmox API token", finalize_token),
         ("terraform", "Configuring Terraform provider", finalize_terraform),
+        ("db_config", "Writing provisioner config", finalize_db_config),
         ("bridge", "Configuring network bridge", finalize_bridge),
         ("template", "Building VM template", finalize_template, "(this may take several minutes)"),
     ]
@@ -414,6 +417,40 @@ def finalize_terraform(config: dict) -> tuple[bool, Optional[str]]:
         return True, None
     except subprocess.TimeoutExpired:
         return False, "Terraform init timed out"
+    except Exception as e:
+        return False, str(e)
+
+
+def finalize_db_config(config: dict) -> tuple[bool, Optional[str]]:
+    """Write /etc/blockhost/db.yaml with provisioner runtime config."""
+    try:
+        provisioner = config.get("provisioner", {})
+
+        db_config = {
+            "db_file": "/var/lib/blockhost/vm-db.json",
+            "terraform_dir": provisioner.get("terraform_dir", "/var/lib/blockhost/terraform"),
+            "bridge": provisioner.get("bridge", "vmbr0"),
+            "gc_grace_days": int(provisioner.get("gc_grace_days", 7)),
+            "vmid_range": {
+                "start": int(provisioner.get("vmid_start", 100)),
+                "end": int(provisioner.get("vmid_end", 999)),
+            },
+            "ip_pool": {
+                "network": provisioner.get("ip_network", "192.168.122.0/24"),
+                "start": provisioner.get("ip_start", "192.168.122.200"),
+                "end": provisioner.get("ip_end", "192.168.122.250"),
+                "gateway": provisioner.get("gateway", "192.168.122.1"),
+            },
+        }
+
+        config_dir = Path("/etc/blockhost")
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        db_yaml_path = config_dir / "db.yaml"
+        db_yaml_path.write_text(yaml.dump(db_config, default_flow_style=False))
+        _set_blockhost_ownership(db_yaml_path, 0o640)
+
+        return True, None
     except Exception as e:
         return False, str(e)
 

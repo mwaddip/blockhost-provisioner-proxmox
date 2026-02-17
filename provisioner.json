@@ -23,13 +23,13 @@
     "first_boot_hook": "/usr/share/blockhost/provisioner-hooks/first-boot.sh",
     "detect":          "blockhost-provisioner-detect",
     "wizard_module":   "blockhost.provisioner_proxmox.wizard",
-    "finalization_steps": ["token", "terraform", "bridge", "template"]
+    "finalization_steps": ["token", "terraform", "db_config", "bridge", "template"]
   },
 
   "root_agent_actions": "/usr/share/blockhost/root-agent-actions/qm.py",
 
   "config_keys": {
     "session_key": "proxmox",
-    "provisioner_config": ["terraform_dir", "vmid_range"]
+    "provisioner_config": ["db_file", "terraform_dir", "bridge", "gc_grace_days", "vmid_range", "ip_pool"]
   }
 }
