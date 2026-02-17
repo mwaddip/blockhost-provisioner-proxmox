@@ -334,10 +334,6 @@ Examples:
     if args.disk < 1:
         parser.error("--disk must be at least 1")
 
-    # Validate wallet address format
-    if args.owner_wallet and not re.match(r'^0x[0-9a-fA-F]{40}$', args.owner_wallet):
-        parser.error("--owner-wallet must be a valid Ethereum address (0x followed by 40 hex characters)")
-
     # Validate user signature format
     if args.user_signature and not re.match(r'^0x[0-9a-fA-F]+$', args.user_signature):
         parser.error("--user-signature must be a hex string starting with 0x")
@@ -483,9 +479,7 @@ Examples:
             "SIGNING_DOMAIN": signing_domain,
             "USERNAME": args.username,
             "NFT_TOKEN_ID": str(nft_token_id),
-            "CHAIN_ID": str(web3_config["blockchain"]["chain_id"]),
-            "NFT_CONTRACT": web3_config["blockchain"]["nft_contract"],
-            "RPC_URL": web3_config["blockchain"]["rpc_url"],
+            "WALLET_ADDRESS": args.owner_wallet,
             "OTP_LENGTH": str(web3_config["auth"]["otp_length"]),
             "OTP_TTL": str(web3_config["auth"]["otp_ttl_seconds"]),
             "SECRET_KEY": secret_key,

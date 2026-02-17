@@ -1,6 +1,6 @@
 # Blockhost Provisioner Project Manifest
 # Machine-readable overview for integration and automation
-# Last updated: 2026-02-09 (root agent QM action module, provisioner abstraction)
+# Last updated: 2026-02-17 (chain-agnostic cloud-init vars, update-gecos command)
 
 name: blockhost-provisioner-proxmox
 version: "0.2.0"
@@ -22,7 +22,7 @@ entry_points:
         position: 1
         description: Name for the VM (e.g., web-001)
       - name: --owner-wallet
-        description: Ethereum wallet address to receive the access NFT
+        description: Wallet address to receive the access NFT
     optional_args:
       - name: --purpose
         description: Description/purpose of the VM
@@ -259,6 +259,19 @@ entry_points:
     outputs:
       - Exit code 0 if Proxmox detected, 1 otherwise
 
+  update_gecos:
+    script: scripts/vm-update-gecos.sh
+    description: Update a VM user's GECOS field after NFT ownership transfer
+    required_args:
+      - name: vm_name
+        position: 1
+        description: Name of the VM to update
+      - name: wallet_address
+        position: 2
+        description: New owner's wallet address
+    example: |
+      blockhost-vm-update-gecos myvm bc1q...
+
 # Provisioner manifest (engine integration)
 provisioner_manifest:
   file: provisioner.json
@@ -280,6 +293,7 @@ provisioner_manifest:
     build-template: blockhost-build-template
     gc: blockhost-vm-gc
     resume: blockhost-vm-resume
+    update-gecos: blockhost-vm-update-gecos
   setup:
     detect: blockhost-provisioner-detect
     wizard_module: blockhost.provisioner_proxmox.wizard
@@ -323,12 +337,14 @@ root_agent_actions:
     qm-importdisk: Import a disk image into a VM
     qm-set: Set VM configuration with allowlisted keys
     qm-template: Convert a VM to a template
+    qm-update-gecos: Update a VM user's GECOS field via qm guest exec
   security:
     - All vmids validated against VMID_MIN/VMID_MAX range
     - qm-create args restricted to QM_CREATE_ALLOWED_ARGS allowlist
     - qm-set keys restricted to QM_SET_ALLOWED_KEYS allowlist
     - qm-importdisk image paths restricted to /var/lib/blockhost/ and /tmp/
     - qm-importdisk storage names validated against STORAGE_RE regex
+    - qm-update-gecos username validated against USERNAME_RE, gecos against GECOS_RE
 
 # Wizard plugin (loaded by main app's installer)
 wizard_plugin:
@@ -433,6 +449,7 @@ privilege_separation:
     - qm_importdisk: Import disk image into a VM
     - qm_set: Set VM configuration (allowlisted keys)
     - qm_template: Convert a VM to a template
+    - qm_update_gecos: Update VM user GECOS field
     - ip6_route_add: Add IPv6 host route (shipped by blockhost-common)
     - ip6_route_del: Remove IPv6 host route (shipped by blockhost-common)
   direct_as_blockhost:
@@ -472,7 +489,7 @@ workflow:
       - 6: |
           Use --cloud-init-content if provided, otherwise render cloud-init template with variables:
           VM_NAME, VM_IP, VM_IPV6, SIGNING_HOST, SIGNING_DOMAIN, USERNAME,
-          NFT_TOKEN_ID, CHAIN_ID, NFT_CONTRACT, RPC_URL, OTP_LENGTH, OTP_TTL, SECRET_KEY, SSH_KEYS.
+          NFT_TOKEN_ID, WALLET_ADDRESS, OTP_LENGTH, OTP_TTL, SECRET_KEY, SSH_KEYS.
           SIGNING_DOMAIN is the broker DNS FQDN ({hex_offset}.{dns_zone}) when dns_zone is present,
           empty string otherwise. SIGNING_HOST is SIGNING_DOMAIN when available, else [IPv6] or IPv4.
       - 7: Generate .tf.json config (with dual-stack IPv4/IPv6, datastore_id, ipv6_gateway)

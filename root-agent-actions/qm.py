@@ -6,6 +6,7 @@ Shipped by blockhost-provisioner, loaded by the root agent daemon from
 """
 
 import os
+import re
 
 from _common import (
     STORAGE_RE,
@@ -13,6 +14,10 @@ from _common import (
     run,
     validate_vmid,
 )
+
+# Input validation for qm-update-gecos
+USERNAME_RE = re.compile(r'^[a-z_][a-z0-9_-]{0,31}$')
+GECOS_RE = re.compile(r'^wallet=[a-zA-Z0-9]{1,128},nft=[0-9]{1,10}$')
 
 # Proxmox-specific allowlists — these belong in the provisioner, not in common.
 QM_CREATE_ALLOWED_ARGS = frozenset({
@@ -125,6 +130,33 @@ def handle_qm_set(params):
     return {'ok': True, 'output': out}
 
 
+def handle_qm_update_gecos(params):
+    """Update a VM user's GECOS field via qm guest exec.
+
+    params:
+        vmid (int): VM ID
+        username (str): Linux username to update
+        gecos (str): New GECOS value (format: wallet=<addr>,nft=<id>)
+    """
+    vmid = validate_vmid(params['vmid'])
+
+    username = params.get('username', '')
+    if not isinstance(username, str) or not USERNAME_RE.match(username):
+        return {'ok': False, 'error': f'Invalid username: {username}'}
+
+    gecos = params.get('gecos', '')
+    if not isinstance(gecos, str) or not GECOS_RE.match(gecos):
+        return {'ok': False, 'error': f'Invalid gecos: {gecos}'}
+
+    rc, out, err = run(
+        ['qm', 'guest', 'exec', str(vmid), '--', 'usermod', '-c', gecos, username],
+        timeout=30,
+    )
+    if rc != 0:
+        return {'ok': False, 'error': err or out}
+    return {'ok': True, 'output': out}
+
+
 ACTIONS = {
     'qm-start': lambda p: _handle_qm_simple(p, 'start'),
     'qm-stop': lambda p: _handle_qm_simple(p, 'stop'),
@@ -134,4 +166,5 @@ ACTIONS = {
     'qm-importdisk': handle_qm_importdisk,
     'qm-set': handle_qm_set,
     'qm-template': lambda p: _handle_qm_simple(p, 'template'),
+    'qm-update-gecos': handle_qm_update_gecos,
 }

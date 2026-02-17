@@ -15,7 +15,8 @@
     "throttle":       "blockhost-vm-throttle",
     "build-template": "blockhost-build-template",
     "gc":             "blockhost-vm-gc",
-    "resume":         "blockhost-vm-resume"
+    "resume":         "blockhost-vm-resume",
+    "update-gecos":   "blockhost-vm-update-gecos"
   },
 
   "setup": {

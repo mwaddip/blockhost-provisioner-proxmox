@@ -78,6 +78,9 @@ blockhost-vm-destroy <name>
 blockhost-vm-status <name>
 blockhost-vm-list [--json]
 
+# Update VM GECOS after ownership transfer
+blockhost-vm-update-gecos <name> <wallet-address>
+
 # Garbage collect expired VMs
 python3 scripts/vm-gc.py [--execute] [--grace-days N]
 
@@ -120,6 +123,7 @@ If yes to any, update `PROJECT.yaml` accordingly.
 | `scripts/vm-list.sh` | List all VMs |
 | `scripts/vm-gc.py` | Garbage collection for expired VMs |
 | `scripts/vm-resume.py` | Resume a suspended VM |
+| `scripts/vm-update-gecos.sh` | Update VM GECOS after ownership transfer |
 | `scripts/build-template.sh` | Proxmox template builder |
 | `scripts/provisioner-detect.sh` | Detect Proxmox VE host |
 | `blockhost/provisioner_proxmox/wizard.py` | Wizard plugin (Blueprint, finalization, summary) |
