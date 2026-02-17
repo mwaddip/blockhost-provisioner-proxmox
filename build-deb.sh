@@ -10,7 +10,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.1.0"
+VERSION="0.2.0"
 PACKAGE_NAME="blockhost-provisioner-proxmox_${VERSION}_all"
 BUILD_DIR="${SCRIPT_DIR}/build"
 
@@ -27,7 +27,7 @@ mkdir -p "${PKG}/DEBIAN"
 
 cat > "${PKG}/DEBIAN/control" << 'EOF'
 Package: blockhost-provisioner-proxmox
-Version: 0.1.0
+Version: 0.2.0
 Section: admin
 Priority: optional
 Architecture: all
