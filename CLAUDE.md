@@ -68,7 +68,7 @@ blockhost-vm-stop <name>
 blockhost-vm-kill <name>
 blockhost-vm-destroy <name>
 blockhost-vm-status <name>
-blockhost-vm-list [--json]
+blockhost-vm-list [--format json]
 
 # Update VM GECOS after ownership transfer
 blockhost-vm-update-gecos <name> <wallet-address> --nft-id <id>

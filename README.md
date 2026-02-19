@@ -153,7 +153,7 @@ blockhost-vm-kill web-001       # Force-stop
 blockhost-vm-destroy web-001    # Destroy (terraform + cleanup)
 blockhost-vm-status web-001     # Print status
 blockhost-vm-list               # List all VMs (text)
-blockhost-vm-list --json        # List all VMs (JSON)
+blockhost-vm-list --format json # List all VMs (JSON)
 ```
 
 ## Configuration

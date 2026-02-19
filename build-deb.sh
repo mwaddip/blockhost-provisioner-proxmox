@@ -32,6 +32,7 @@ Section: admin
 Priority: optional
 Architecture: all
 Depends: python3 (>= 3.10), blockhost-common (>= 0.1.0)
+Conflicts: blockhost-provisioner-libvirt
 Recommends: terraform (>= 1.0)
 Suggests: libguestfs-tools
 Maintainer: Blockhost Team <blockhost@example.com>

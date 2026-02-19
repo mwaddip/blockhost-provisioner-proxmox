@@ -37,11 +37,11 @@ entry_points:
         description: Number of CPU cores
       - name: --memory
         type: int
-        default: 512
+        default: 2048
         description: Memory in MB
       - name: --disk
         type: int
-        default: 10
+        default: 20
         description: Disk size in GB
       - name: --apply
         type: flag
@@ -229,11 +229,18 @@ entry_points:
     script: scripts/vm-list.sh
     description: List all VMs (text or JSON output)
     optional_args:
+      - name: --format
+        type: string
+        description: "Output format (currently only 'json' supported)"
       - name: --json
         type: flag
-        description: Output as JSON array
+        description: "Output as JSON array (alias for --format json)"
+    output: |
+      Text: tab-separated NAME, STATUS, IP, CREATED columns
+      JSON: array of {name, status, ip, created} objects
     example: |
       blockhost-vm-list
+      blockhost-vm-list --format json
       blockhost-vm-list --json
 
   vm_metrics:
