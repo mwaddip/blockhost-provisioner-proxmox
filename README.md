@@ -1,23 +1,21 @@
 # blockhost-provisioner-proxmox
 
-Terraform-based Proxmox VM automation with NFT web3 authentication. Creates Debian 12 VMs from a cloud-init template that includes [libpam-web3](https://github.com/mwaddip/libpam-web3) for Ethereum wallet-based SSH login.
+Terraform-based Proxmox VM automation with NFT web3 authentication. Creates Debian 12 VMs from a cloud-init template that includes [libpam-web3](https://github.com/mwaddip/libpam-web3) for wallet-based SSH login.
 
 ## How it works
 
 1. A Debian 12 cloud image is customized with `libpam-web3` and uploaded to Proxmox as a template (VMID 9001)
-2. `vm-generator.py` reserves an NFT token ID, generates a Terraform `.tf.json` config with cloud-init, and optionally applies it
-3. On successful VM creation, a JSON summary is printed for engine consumption. NFT minting is either handled inline (legacy) or by the engine separately (`--no-mint`)
-4. Users authenticate to SSH by signing an OTP challenge with their Ethereum wallet
+2. The engine reserves an NFT token ID, then calls `vm-generator.py` with `--owner-wallet` and `--nft-token-id`
+3. `vm-generator.py` generates a Terraform `.tf.json` config with cloud-init (baking wallet + token ID into GECOS), applies it, and prints a JSON summary
+4. Users authenticate to SSH by signing an OTP challenge with their wallet
 
 VMs are tracked in a JSON database with IP/VMID allocation, expiry dates, and NFT token status. Expired VMs are cleaned up by `vm-gc.py`.
 
 ## Prerequisites
 
 - **blockhost-common** package - Provides configuration and database modules
-- **blockhost-engine** package - Provides `nft_tool` CLI (encrypt-symmetric for connection details)
 - [Terraform](https://www.terraform.io/) with the [bpg/proxmox](https://registry.terraform.io/providers/bpg/proxmox/latest) provider
 - Proxmox VE host accessible via SSH (`root@ix`)
-- [Foundry](https://getfoundry.sh/) (`cast` CLI) for NFT minting
 - `libguestfs-tools` for template image customization
 
 ## Installation
@@ -25,7 +23,6 @@ VMs are tracked in a JSON database with IP/VMID allocation, expiry dates, and NF
 ```bash
 # Install dependencies
 sudo dpkg -i blockhost-common_*.deb
-sudo dpkg -i blockhost-engine_*.deb
 sudo dpkg -i blockhost-provisioner-proxmox_*.deb
 
 # Initialize server (generates keys and config)
@@ -98,35 +95,29 @@ PROXMOX_HOST=root@myhost TEMPLATE_VMID=9002 ./scripts/build-template.sh
 
 Creates VMs with NFT-based web3 authentication:
 
-1. Reserves a sequential NFT token ID
-2. Allocates an IP address and VMID from the pool
-3. Renders cloud-init from the `nft-auth` template (or uses `--cloud-init-content` for pre-rendered content)
-4. Generates a `.tf.json` Terraform config
-5. Optionally runs `terraform apply`
-6. On success, prints a JSON summary as the last stdout line
-7. Optionally mints the access NFT inline (legacy; skipped with `--no-mint`)
+1. Allocates an IP address and VMID from the pool
+2. Renders cloud-init from the `nft-auth` template (or uses `--cloud-init-content` for pre-rendered content)
+3. Generates a `.tf.json` Terraform config
+4. Optionally runs `terraform apply`
+5. On success, prints a JSON summary as the last stdout line
+
+The engine owns the NFT lifecycle (token ID reservation, encryption, minting). The provisioner receives `--nft-token-id` and `--owner-wallet` from the engine.
 
 ```bash
-# Engine-driven: create VM, skip minting (engine mints separately)
-python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... --apply --no-mint
+# Engine-driven: create VM
+python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... \
+    --nft-token-id 42 --apply
 
-# Engine-driven with pre-rendered cloud-init
-python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... --apply --no-mint \
-    --cloud-init-content /path/to/rendered.yaml
-
-# Legacy: create VM and mint NFT inline
-python3 scripts/vm-generator.py web-001 \
-    --owner-wallet 0xAbCd... \
-    --purpose "production web server" \
-    --cpu 2 --memory 2048 --disk 20 \
-    --tags web production \
-    --apply
+# With pre-rendered cloud-init
+python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... \
+    --nft-token-id 42 --apply --cloud-init-content /path/to/rendered.yaml
 
 # Without web3 auth
 python3 scripts/vm-generator.py web-001 --no-web3 --cloud-init webserver
 
-# Test mode (mock DB, no minting)
-python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... --mock --no-mint --apply
+# Test mode (mock DB)
+python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... \
+    --nft-token-id 0 --mock --apply
 ```
 
 ### `scripts/vm-gc.py`
@@ -186,7 +177,7 @@ Database configuration: production DB file path, terraform_dir, IP pool range, V
 
 ## Setup
 
-1. Install blockhost-common and blockhost-engine packages
+1. Install blockhost-common package
 2. Run `init-server.sh` from blockhost-engine to generate keys and config
 3. Edit `/etc/blockhost/web3-defaults.yaml` with your contract address and RPC URL
 4. Edit `/etc/blockhost/db.yaml` with your terraform_dir path
