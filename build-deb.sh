@@ -31,7 +31,7 @@ Version: 0.2.0
 Section: admin
 Priority: optional
 Architecture: all
-Depends: python3 (>= 3.10), blockhost-common (>= 0.1.0), blockhost-engine (>= 0.1.0)
+Depends: python3 (>= 3.10), blockhost-common (>= 0.1.0)
 Recommends: terraform (>= 1.0)
 Suggests: libguestfs-tools
 Maintainer: Blockhost Team <blockhost@example.com>
@@ -95,23 +95,17 @@ case "$1" in
         echo "  blockhost-vm-resume      - Resume a suspended VM"
         echo "  blockhost-build-template - Build Proxmox VM template"
         echo ""
-        echo "IMPORTANT: Manual installation required for:"
+        echo "IMPORTANT: Terraform must be installed manually:"
         echo ""
-        echo "  1. Terraform (https://terraform.io/downloads)"
-        echo "     curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp.gpg"
-        echo "     echo \"deb [signed-by=/usr/share/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com \$(lsb_release -cs) main\" | sudo tee /etc/apt/sources.list.d/hashicorp.list"
-        echo "     sudo apt update && sudo apt install terraform"
-        echo ""
-        echo "  2. Foundry/cast (https://book.getfoundry.sh/getting-started/installation)"
-        echo "     curl -L https://foundry.paradigm.xyz | bash"
-        echo "     foundryup"
+        echo "  curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp.gpg"
+        echo "  echo \"deb [signed-by=/usr/share/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com \$(lsb_release -cs) main\" | sudo tee /etc/apt/sources.list.d/hashicorp.list"
+        echo "  sudo apt update && sudo apt install terraform"
         echo ""
         echo "Quick start:"
-        echo "  1. Configure /etc/blockhost/web3-defaults.yaml (NFT contract)"
-        echo "  2. Create deployer key: /etc/blockhost/deployer.key"
-        echo "  3. Setup Terraform in /var/lib/blockhost/terraform/"
-        echo "  4. Build template: blockhost-build-template"
-        echo "  5. Create VM: blockhost-vm-create myvm --owner-wallet 0x... --apply"
+        echo "  1. Configure /etc/blockhost/web3-defaults.yaml"
+        echo "  2. Setup Terraform in /var/lib/blockhost/terraform/"
+        echo "  3. Build template: blockhost-build-template"
+        echo "  4. Create VM: blockhost-vm-create myvm --owner-wallet 0x... --nft-token-id 0 --apply"
         echo ""
         echo "See /usr/share/doc/blockhost-provisioner-proxmox/ for documentation."
         echo "============================================================"
