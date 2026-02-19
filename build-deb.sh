@@ -31,7 +31,7 @@ Version: 0.2.0
 Section: admin
 Priority: optional
 Architecture: all
-Depends: python3 (>= 3.10), blockhost-common (>= 0.1.0), libpam-web3-tools (>= 0.5.0)
+Depends: python3 (>= 3.10), blockhost-common (>= 0.1.0), blockhost-engine (>= 0.1.0)
 Recommends: terraform (>= 1.0)
 Suggests: libguestfs-tools
 Maintainer: Blockhost Team <blockhost@example.com>

@@ -593,7 +593,7 @@ Examples:
                     })
                     encrypt_result = subprocess.run(
                         [
-                            "pam_web3_tool", "encrypt-symmetric",
+                            "nft_tool", "encrypt-symmetric",
                             "--signature", args.user_signature,
                             "--plaintext", connection_details
                         ],

@@ -406,7 +406,7 @@ dependencies:
   packages:
     - blockhost-common: Config, database, and root agent modules (including IPv6 allocation)
     - blockhost-broker: IPv6 tunnel broker (broker-client creates /etc/blockhost/broker-allocation.json)
-    - libpam-web3-tools: pam_web3_tool CLI, signing page (served from local filesystem)
+    - blockhost-engine: nft_tool CLI (encrypt-symmetric for connection details)
   system:
     - terraform: ">=1.0"
     - libguestfs-tools: For virt-customize
@@ -426,7 +426,7 @@ integration:
     setup_steps:
       - Install blockhost-common package (provides config modules)
       - Install blockhost-provisioner-proxmox package (provides this package)
-      - Install libpam-web3-tools package (provides signing page)
+      - Install blockhost-engine package (provides nft_tool CLI)
       - Run init-server.sh from blockhost-engine to generate keys and config
       - Configure /etc/blockhost/db.yaml with terraform_dir path
       - Configure /etc/blockhost/web3-defaults.yaml with contract details
@@ -463,7 +463,7 @@ privilege_separation:
   direct_as_blockhost:
     - terraform: HTTP API auth, terraform_dir owned by blockhost
     - cast: Reads deployer key via group perm 0640
-    - pam_web3_tool: encrypt-symmetric for connection details
+    - nft_tool: encrypt-symmetric for connection details
   exceptions:
     - build-template.sh: Runs during installer finalization when process IS root
 

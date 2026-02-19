@@ -14,7 +14,7 @@ VMs are tracked in a JSON database with IP/VMID allocation, expiry dates, and NF
 ## Prerequisites
 
 - **blockhost-common** package - Provides configuration and database modules
-- **libpam-web3-tools** package - Provides signing page HTML and `pam_web3_tool` CLI
+- **blockhost-engine** package - Provides `nft_tool` CLI (encrypt-symmetric for connection details)
 - [Terraform](https://www.terraform.io/) with the [bpg/proxmox](https://registry.terraform.io/providers/bpg/proxmox/latest) provider
 - Proxmox VE host accessible via SSH (`root@ix`)
 - [Foundry](https://getfoundry.sh/) (`cast` CLI) for NFT minting
@@ -25,7 +25,7 @@ VMs are tracked in a JSON database with IP/VMID allocation, expiry dates, and NF
 ```bash
 # Install dependencies
 sudo dpkg -i blockhost-common_*.deb
-sudo dpkg -i libpam-web3-tools_*.deb
+sudo dpkg -i blockhost-engine_*.deb
 sudo dpkg -i blockhost-provisioner-proxmox_*.deb
 
 # Initialize server (generates keys and config)
@@ -186,7 +186,7 @@ Database configuration: production DB file path, terraform_dir, IP pool range, V
 
 ## Setup
 
-1. Install blockhost-common and libpam-web3-tools packages
+1. Install blockhost-common and blockhost-engine packages
 2. Run `init-server.sh` from blockhost-engine to generate keys and config
 3. Edit `/etc/blockhost/web3-defaults.yaml` with your contract address and RPC URL
 4. Edit `/etc/blockhost/db.yaml` with your terraform_dir path
