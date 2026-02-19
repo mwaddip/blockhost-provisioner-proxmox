@@ -33,12 +33,12 @@
     "default_memory_mb": {
       "description": "Default memory in MB",
       "type": "number",
-      "default": 512
+      "default": 2048
     },
     "default_disk_gb": {
       "description": "Default disk size in GB",
       "type": "number",
-      "default": 10
+      "default": 20
     },
     "default_username": {
       "description": "Default username for cloud-init",

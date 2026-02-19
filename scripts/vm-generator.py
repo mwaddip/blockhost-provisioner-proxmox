@@ -108,8 +108,8 @@ def generate_tf_config(
     gateway: str,
     tf_dir: Path,
     cpu_cores: int = 1,
-    memory_mb: int = 512,
-    disk_gb: int = 10,
+    memory_mb: int = 2048,
+    disk_gb: int = 20,
     template_vmid: int = 9001,
     node_name: str = "pve",
     tags: list[str] = None,
@@ -254,8 +254,8 @@ Examples:
     parser.add_argument("--purpose", default="", help="Purpose/description of the VM")
     parser.add_argument("--owner", default="admin", help="VM owner (default: admin)")
     parser.add_argument("--cpu", type=int, default=1, help="Number of CPU cores (default: 1)")
-    parser.add_argument("--memory", type=int, default=512, help="Memory in MB (default: 512)")
-    parser.add_argument("--disk", type=int, default=10, help="Disk size in GB (default: 10)")
+    parser.add_argument("--memory", type=int, default=2048, help="Memory in MB (default: 2048)")
+    parser.add_argument("--disk", type=int, default=20, help="Disk size in GB (default: 20)")
     parser.add_argument("--template-vmid", type=int, default=9001, help="Template VM ID (default: 9001)")
     parser.add_argument("--tags", nargs="+", default=[], help="Tags for the VM")
     parser.add_argument("--expiry-days", type=int, default=30, help="Days until VM expires (default: 30)")
