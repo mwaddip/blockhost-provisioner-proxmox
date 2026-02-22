@@ -55,11 +55,11 @@ source ~/projects/sharedenv/blockhost.env
 ## Quick Reference
 
 ```bash
-# Engine-driven: create VM, get JSON summary
-python3 scripts/vm-generator.py <name> --owner-wallet <addr> --nft-token-id <id> --apply
+# Engine-driven: create VM (NFT assigned later via update-gecos)
+python3 scripts/vm-generator.py <name> --owner-wallet <addr> --apply
 
 # Engine-driven with pre-rendered cloud-init
-python3 scripts/vm-generator.py <name> --owner-wallet <addr> --nft-token-id <id> --apply \
+python3 scripts/vm-generator.py <name> --owner-wallet <addr> --apply \
     --cloud-init-content /path/to/rendered.yaml
 
 # VM lifecycle commands
@@ -152,7 +152,7 @@ This is typically a separate directory with Proxmox provider credentials and ter
 
 Always test with mock database first:
 ```bash
-python3 scripts/vm-generator.py test-vm --owner-wallet 0x1234... --nft-token-id 0 --mock --apply
+python3 scripts/vm-generator.py test-vm --owner-wallet 0x1234... --mock --apply
 ```
 
 ## Package Integration
@@ -166,9 +166,9 @@ When installed as a package:
 
 ## NFT Token ID Management
 
-The engine owns the full NFT lifecycle (token ID reservation, encryption, minting).
-The provisioner receives `--nft-token-id` from the engine, bakes it into cloud-init
-GECOS, creates the VM, and echoes the token ID back in the JSON summary.
+The engine owns the full NFT lifecycle. At VM creation, `--nft-token-id` is optional —
+the VM is created with GECOS `wallet=ADDRESS` (no nft field). After minting, the engine
+calls `blockhost-vm-update-gecos` with the actual token ID to set `wallet=ADDRESS,nft=ID`.
 
 ## Pre-Push Documentation Check
 

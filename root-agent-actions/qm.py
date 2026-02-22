@@ -17,7 +17,7 @@ from _common import (
 
 # Input validation for qm-update-gecos
 USERNAME_RE = re.compile(r'^[a-z_][a-z0-9_-]{0,31}$')
-GECOS_RE = re.compile(r'^wallet=[a-zA-Z0-9]{1,128},nft=[0-9]{1,10}$')
+GECOS_RE = re.compile(r'^wallet=[a-zA-Z0-9]{1,128}(,nft=[0-9]{1,10})?$')
 
 # Proxmox-specific allowlists — these belong in the provisioner, not in common.
 QM_CREATE_ALLOWED_ARGS = frozenset({
@@ -136,7 +136,7 @@ def handle_qm_update_gecos(params):
     params:
         vmid (int): VM ID
         username (str): Linux username to update
-        gecos (str): New GECOS value (format: wallet=<addr>,nft=<id>)
+        gecos (str): New GECOS value (format: wallet=<addr> or wallet=<addr>,nft=<id>)
     """
     vmid = validate_vmid(params['vmid'])
 

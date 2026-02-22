@@ -11,25 +11,27 @@ Workflow (with --apply):
 3. Apply Terraform to create VM
 4. Print JSON summary as last line
 
-The engine owns the NFT lifecycle (token ID reservation, encryption,
-minting). This script receives --nft-token-id from the engine and bakes
-it into the cloud-init GECOS.
+The engine owns the NFT lifecycle. At creation time, --nft-token-id is
+optional — the VM is created with GECOS wallet=ADDRESS. After minting,
+the engine calls update-gecos to set the token ID.
 
 Usage:
-    # Engine-driven: create VM, get JSON summary
+    # Engine-driven: create VM (NFT assigned later via update-gecos)
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply
+
+    # With known NFT token ID
     python3 vm-generator.py web-001 --owner-wallet 0x1234... \
         --nft-token-id 42 --apply
 
     # Pre-rendered cloud-init from engine
-    python3 vm-generator.py web-001 --owner-wallet 0x1234... \
-        --nft-token-id 42 --apply --cloud-init-content /path/to/rendered.yaml
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply \
+        --cloud-init-content /path/to/rendered.yaml
 
     # Without web3 auth
     python3 vm-generator.py web-001 --no-web3 --cloud-init webserver
 
     # Test with mock database
-    python3 vm-generator.py web-001 --owner-wallet 0x1234... \
-        --nft-token-id 42 --mock --apply
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --mock --apply
 """
 
 import argparse
@@ -233,20 +235,22 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Engine-driven: create VM, get JSON summary
+    # Engine-driven: create VM (NFT assigned later via update-gecos)
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply
+
+    # With known NFT token ID
     python3 vm-generator.py web-001 --owner-wallet 0x1234... \\
         --nft-token-id 42 --apply
 
     # Pre-rendered cloud-init from engine
-    python3 vm-generator.py web-001 --owner-wallet 0x1234... \\
-        --nft-token-id 42 --apply --cloud-init-content /path/to/rendered.yaml
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply \\
+        --cloud-init-content /path/to/rendered.yaml
 
     # Without web3 auth
     python3 vm-generator.py web-001 --no-web3 --cloud-init webserver
 
     # Test with mock database
-    python3 vm-generator.py web-001 --owner-wallet 0x1234... \\
-        --nft-token-id 42 --mock --apply
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --mock --apply
         """
     )
 
@@ -306,12 +310,10 @@ Examples:
     if not args.cloudinit_datastore:
         args.cloudinit_datastore = tfvars.get("cloudinit_datastore", "local")
 
-    # Validate: web3 auth requires --owner-wallet and --nft-token-id
+    # Validate: web3 auth requires --owner-wallet
     web3_enabled = not args.no_web3
     if web3_enabled and not args.owner_wallet:
         parser.error("--owner-wallet is required (or use --no-web3 to disable NFT auth)")
-    if web3_enabled and args.nft_token_id is None:
-        parser.error("--nft-token-id is required (or use --no-web3 to disable NFT auth)")
 
     nft_token_id = args.nft_token_id
 
@@ -418,13 +420,14 @@ Examples:
             "SIGNING_HOST": signing_host,
             "SIGNING_DOMAIN": signing_domain,
             "USERNAME": args.username,
-            "NFT_TOKEN_ID": str(nft_token_id),
             "WALLET_ADDRESS": args.owner_wallet,
             "OTP_LENGTH": str(web3_config["auth"]["otp_length"]),
             "OTP_TTL": str(web3_config["auth"]["otp_ttl_seconds"]),
             "SECRET_KEY": secret_key,
             "SSH_KEYS": f"\n{ssh_keys_yaml}" if ssh_keys_yaml else "[]",
         }
+        if nft_token_id is not None:
+            variables["NFT_TOKEN_ID"] = str(nft_token_id)
 
         cloud_init_content = render_cloud_init(f"{template_name}.yaml", variables)
     elif template_name:
