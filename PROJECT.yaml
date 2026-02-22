@@ -1,6 +1,6 @@
 # Blockhost Provisioner Project Manifest
 # Machine-readable overview for integration and automation
-# Last updated: 2026-02-20 (remove NFT minting from provisioner, engine owns lifecycle)
+# Last updated: 2026-02-22 (make --nft-token-id optional, relax GECOS_RE)
 
 name: blockhost-provisioner-proxmox
 version: "0.2.0"
@@ -23,10 +23,11 @@ entry_points:
         description: Name for the VM (e.g., web-001)
       - name: --owner-wallet
         description: Wallet address (chain-agnostic). Required unless --no-web3.
+    optional_args:
       - name: --nft-token-id
         type: int
-        description: NFT token ID (reserved by engine). Required unless --no-web3.
-    optional_args:
+        default: null
+        description: NFT token ID (optional; engine calls update-gecos after minting)
       - name: --expiry-days
         type: int
         default: 30
@@ -83,15 +84,18 @@ entry_points:
         Format: {"status":"ok","vm_name":"...","ip":"...","ipv6":"...","vmid":N,"nft_token_id":N,"username":"..."}
         Fields ipv6 and nft_token_id may be null.
     example: |
-      # Engine-driven: create VM
+      # Engine-driven: create VM (NFT assigned later via update-gecos)
+      python3 scripts/vm-generator.py web-001 \
+        --owner-wallet 0x1234...abcd --apply
+
+      # With known NFT token ID
       python3 scripts/vm-generator.py web-001 \
         --owner-wallet 0x1234...abcd \
         --nft-token-id 42 --apply
 
       # With pre-rendered cloud-init
       python3 scripts/vm-generator.py web-001 \
-        --owner-wallet 0x1234...abcd \
-        --nft-token-id 42 --apply \
+        --owner-wallet 0x1234...abcd --apply \
         --cloud-init-content /path/to/rendered.yaml
 
   garbage_collection:
@@ -351,7 +355,7 @@ root_agent_actions:
     - qm-set keys restricted to QM_SET_ALLOWED_KEYS allowlist
     - qm-importdisk image paths restricted to /var/lib/blockhost/ and /tmp/
     - qm-importdisk storage names validated against STORAGE_RE regex
-    - qm-update-gecos username validated against USERNAME_RE, gecos against GECOS_RE
+    - qm-update-gecos username validated against USERNAME_RE, gecos against GECOS_RE (wallet=ADDR or wallet=ADDR,nft=ID)
 
 # Wizard plugin (loaded by main app's installer)
 wizard_plugin:
@@ -429,7 +433,7 @@ integration:
       - Configure /etc/blockhost/web3-defaults.yaml with contract details
       - Run build-template.sh to deploy template to Proxmox
     usage: |
-      # Create VM with web3 auth
+      # Create VM with web3 auth (NFT assigned later via update-gecos)
       blockhost-vm-create myvm --owner-wallet 0x... --apply
 
   terraform_state:
@@ -490,8 +494,9 @@ workflow:
       - 4: |
           Use --cloud-init-content if provided, otherwise render cloud-init template with variables:
           VM_NAME, VM_IP, VM_IPV6, SIGNING_HOST, SIGNING_DOMAIN, USERNAME,
-          NFT_TOKEN_ID, WALLET_ADDRESS, OTP_LENGTH, OTP_TTL, SECRET_KEY, SSH_KEYS.
-          NFT_TOKEN_ID and WALLET_ADDRESS come from --nft-token-id and --owner-wallet (passed by engine).
+          WALLET_ADDRESS, OTP_LENGTH, OTP_TTL, SECRET_KEY, SSH_KEYS.
+          NFT_TOKEN_ID is included only when --nft-token-id is provided.
+          WALLET_ADDRESS comes from --owner-wallet (passed by engine).
           SIGNING_DOMAIN is the broker DNS FQDN ({hex_offset}.{dns_zone}) when dns_zone is present,
           empty string otherwise. SIGNING_HOST is SIGNING_DOMAIN when available, else [IPv6] or IPv4.
       - 5: Generate .tf.json config (with dual-stack IPv4/IPv6, datastore_id, ipv6_gateway)

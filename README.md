@@ -5,9 +5,10 @@ Terraform-based Proxmox VM automation with NFT web3 authentication. Creates Debi
 ## How it works
 
 1. A Debian 12 cloud image is customized with `libpam-web3` and uploaded to Proxmox as a template (VMID 9001)
-2. The engine reserves an NFT token ID, then calls `vm-generator.py` with `--owner-wallet` and `--nft-token-id`
-3. `vm-generator.py` generates a Terraform `.tf.json` config with cloud-init (baking wallet + token ID into GECOS), applies it, and prints a JSON summary
-4. Users authenticate to SSH by signing an OTP challenge with their wallet
+2. The engine calls `vm-generator.py` with `--owner-wallet` to create the VM (GECOS: `wallet=ADDRESS`)
+3. `vm-generator.py` generates a Terraform `.tf.json` config with cloud-init, applies it, and prints a JSON summary
+4. The engine mints the NFT, then calls `update-gecos` with the actual token ID (GECOS: `wallet=ADDRESS,nft=ID`)
+5. Users authenticate to SSH by signing an OTP challenge with their wallet
 
 VMs are tracked in a JSON database with IP/VMID allocation, expiry dates, and NFT token status. Expired VMs are cleaned up by `vm-gc.py`.
 
@@ -101,23 +102,25 @@ Creates VMs with NFT-based web3 authentication:
 4. Optionally runs `terraform apply`
 5. On success, prints a JSON summary as the last stdout line
 
-The engine owns the NFT lifecycle (token ID reservation, encryption, minting). The provisioner receives `--nft-token-id` and `--owner-wallet` from the engine.
+The engine owns the NFT lifecycle. At creation, `--nft-token-id` is optional — the engine calls `update-gecos` after minting to set the token ID.
 
 ```bash
-# Engine-driven: create VM
+# Engine-driven: create VM (NFT assigned later via update-gecos)
+python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... --apply
+
+# With known NFT token ID
 python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... \
     --nft-token-id 42 --apply
 
 # With pre-rendered cloud-init
-python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... \
-    --nft-token-id 42 --apply --cloud-init-content /path/to/rendered.yaml
+python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... --apply \
+    --cloud-init-content /path/to/rendered.yaml
 
 # Without web3 auth
 python3 scripts/vm-generator.py web-001 --no-web3 --cloud-init webserver
 
 # Test mode (mock DB)
-python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... \
-    --nft-token-id 0 --mock --apply
+python3 scripts/vm-generator.py web-001 --owner-wallet 0x1234... --mock --apply
 ```
 
 ### `scripts/vm-gc.py`
@@ -184,3 +187,4 @@ Database configuration: production DB file path, terraform_dir, IP pool range, V
 5. Build the template: `./scripts/build-template.sh`
 6. Create `terraform.tfvars` in terraform_dir with your Proxmox credentials
 7. Create VMs: `python3 scripts/vm-generator.py <name> --owner-wallet <addr> --apply`
+8. After minting: `blockhost-vm-update-gecos <name> <addr> --nft-id <id>`
