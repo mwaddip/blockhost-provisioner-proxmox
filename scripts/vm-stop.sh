@@ -8,7 +8,7 @@ VM_NAME="$1"
 exec python3 - "$VM_NAME" << 'PYEOF'
 import sys
 
-from blockhost.root_agent import qm_shutdown
+from blockhost.root_agent import RootAgentError, qm_shutdown
 from blockhost.vm_db import get_database
 
 vm_name = sys.argv[1]
@@ -18,6 +18,10 @@ if not vm:
     print(f"VM {vm_name} not found", file=sys.stderr)
     sys.exit(1)
 
-qm_shutdown(vm["vmid"])
+try:
+    qm_shutdown(vm["vmid"])
+except RootAgentError as e:
+    print(f"Error stopping {vm_name}: {e}", file=sys.stderr)
+    sys.exit(1)
 print(f"Stopped {vm_name} (VMID {vm['vmid']})")
 PYEOF

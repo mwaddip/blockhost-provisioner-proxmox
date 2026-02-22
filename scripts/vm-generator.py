@@ -49,14 +49,9 @@ from blockhost.config import (
     load_db_config,
     load_web3_config,
 )
+from blockhost.provisioner_proxmox import get_terraform_dir, sanitize_resource_name
 from blockhost.root_agent import RootAgentError, ip6_route_add
 from blockhost.vm_db import get_database
-
-
-def get_terraform_dir() -> Path:
-    """Get the Terraform working directory from db config."""
-    config = load_db_config()
-    return Path(config["terraform_dir"])
 
 
 def load_terraform_vars() -> dict:
@@ -82,11 +77,6 @@ def load_terraform_vars() -> dict:
             variables[key] = value
 
     return variables
-
-
-def sanitize_resource_name(name: str) -> str:
-    """Convert VM name to valid Terraform resource name."""
-    return re.sub(r"[^a-zA-Z0-9_]", "_", name)
 
 
 def load_ssh_keys() -> list[str]:
@@ -295,6 +285,22 @@ Examples:
         parser.error("--memory must be at least 64")
     if args.disk < 1:
         parser.error("--disk must be at least 1")
+
+    # Validate wallet address format (alphanumeric, matches GECOS_RE expectations)
+    if args.owner_wallet and not re.match(r'^[a-zA-Z0-9]{1,128}$', args.owner_wallet):
+        parser.error("--owner-wallet must be 1-128 alphanumeric characters")
+
+    # Validate manually specified IP addresses
+    if args.ip:
+        try:
+            ipaddress.IPv4Address(args.ip)
+        except ValueError:
+            parser.error(f"--ip is not a valid IPv4 address: {args.ip}")
+    if args.ipv6:
+        try:
+            ipaddress.IPv6Address(args.ipv6)
+        except ValueError:
+            parser.error(f"--ipv6 is not a valid IPv6 address: {args.ipv6}")
 
     # Load terraform.tfvars for defaults
     tfvars = load_terraform_vars()

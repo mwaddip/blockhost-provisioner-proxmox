@@ -35,20 +35,27 @@ def wizard_proxmox():
     detected = _detect_proxmox_resources()
 
     if request.method == "POST":
+
+        def _safe_int(value, default):
+            try:
+                return int(value)
+            except (ValueError, TypeError):
+                return default
+
         session["proxmox"] = {
             "api_url": request.form.get("pve_api_url"),
             "node": request.form.get("pve_node"),
             "storage": request.form.get("pve_storage"),
             "bridge": request.form.get("pve_bridge"),
             "user": request.form.get("pve_user"),
-            "template_vmid": int(request.form.get("template_vmid", 9001)),
-            "vmid_start": int(request.form.get("vmid_start", 100)),
-            "vmid_end": int(request.form.get("vmid_end", 999)),
+            "template_vmid": _safe_int(request.form.get("template_vmid"), 9001),
+            "vmid_start": _safe_int(request.form.get("vmid_start"), 100),
+            "vmid_end": _safe_int(request.form.get("vmid_end"), 999),
             "ip_network": request.form.get("ip_network"),
             "ip_start": request.form.get("ip_start"),
             "ip_end": request.form.get("ip_end"),
             "gateway": request.form.get("gateway"),
-            "gc_grace_days": int(request.form.get("gc_grace_days", 7)),
+            "gc_grace_days": _safe_int(request.form.get("gc_grace_days"), 7),
             "terraform_dir": "/var/lib/blockhost/terraform",
         }
         return redirect(url_for("wizard_ipv6"))
@@ -493,6 +500,12 @@ def finalize_bridge(config: dict) -> tuple[bool, Optional[str]]:
         except (ValueError, IndexError):
             return False, f"Could not parse default route: {result.stdout}"
 
+        try:
+            via_idx = parts.index("via")
+            gateway = parts[via_idx + 1]
+        except (ValueError, IndexError):
+            return False, "Could not determine gateway from default route"
+
         # Get current IP configuration from the primary interface
         result = subprocess.run(
             ["ip", "-j", "addr", "show", primary_iface],
@@ -519,20 +532,6 @@ def finalize_bridge(config: dict) -> tuple[bool, Optional[str]]:
 
         if not ipv4_addr or not ipv4_prefix:
             return False, f"Could not find IPv4 address on {primary_iface}"
-
-        # Get gateway from default route
-        result = subprocess.run(
-            ["ip", "route", "show", "default"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        parts = result.stdout.strip().split()
-        try:
-            via_idx = parts.index("via")
-            gateway = parts[via_idx + 1]
-        except (ValueError, IndexError):
-            return False, "Could not determine gateway"
 
         # Step 1: Create bridge via PVE API
         result = subprocess.run(

@@ -25,9 +25,9 @@ PKG="${BUILD_DIR}/pkg"
 # Create DEBIAN control files
 mkdir -p "${PKG}/DEBIAN"
 
-cat > "${PKG}/DEBIAN/control" << 'EOF'
+cat > "${PKG}/DEBIAN/control" << EOF
 Package: blockhost-provisioner-proxmox
-Version: 0.2.0
+Version: ${VERSION}
 Section: admin
 Priority: optional
 Architecture: all

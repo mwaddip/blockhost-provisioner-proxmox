@@ -19,6 +19,7 @@ The script:
 """
 
 import argparse
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -75,6 +76,11 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    # Validate VM name format
+    if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9._-]*$', args.vm_name):
+        print("Error: Invalid VM name format", file=sys.stderr)
+        return 1
 
     # Initialize database
     db = get_database(use_mock=args.mock)
