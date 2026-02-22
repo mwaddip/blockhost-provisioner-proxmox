@@ -8,9 +8,8 @@ VM_NAME="$1"
 exec python3 - "$VM_NAME" << 'PYEOF'
 import subprocess
 import sys
-from pathlib import Path
 
-from blockhost.config import load_db_config
+from blockhost.provisioner_proxmox import get_terraform_dir
 from blockhost.root_agent import RootAgentError, ip6_route_del
 from blockhost.vm_db import get_database
 
@@ -21,7 +20,7 @@ if not vm:
     print(f"VM {vm_name} not found", file=sys.stderr)
     sys.exit(1)
 
-tf_dir = Path(load_db_config()["terraform_dir"])
+tf_dir = get_terraform_dir()
 tf_file = tf_dir / f"{vm_name}.tf.json"
 ci_file = tf_dir / f"{vm_name}-cloud-config.yaml"
 

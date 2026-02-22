@@ -32,13 +32,13 @@ Designed to run as a systemd timer (daily at 2 AM).
 """
 
 import argparse
-import re
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from blockhost.config import load_db_config
+from blockhost.provisioner_proxmox import get_terraform_dir, sanitize_resource_name
 from blockhost.root_agent import (
     RootAgentError,
     ip6_route_del,
@@ -47,16 +47,6 @@ from blockhost.root_agent import (
     qm_stop,
 )
 from blockhost.vm_db import get_database
-
-
-def get_terraform_dir() -> Path:
-    """Get the Terraform working directory from db config."""
-    return Path(load_db_config()["terraform_dir"])
-
-
-def sanitize_resource_name(name: str) -> str:
-    """Convert VM name to valid Terraform resource name."""
-    return re.sub(r"[^a-zA-Z0-9_]", "_", name)
 
 
 def get_tf_file_path(name: str) -> Path:
@@ -80,7 +70,7 @@ def run_qm_command(vmid: int, command: str) -> tuple[bool, str]:
         return False, str(e)
 
 
-def shutdown_vm(vmid: int, graceful_timeout: int = 60) -> tuple[bool, str]:
+def shutdown_vm(vmid: int) -> tuple[bool, str]:
     """
     Shut down a VM gracefully, falling back to force stop.
 

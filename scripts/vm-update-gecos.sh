@@ -8,6 +8,7 @@ shift 2 2>/dev/null || { echo "Usage: blockhost-vm-update-gecos <vm-name> <walle
 
 exec python3 - "$VM_NAME" "$WALLET_ADDRESS" "$@" << 'PYEOF'
 import argparse
+import re
 import sys
 
 from blockhost.root_agent import call, RootAgentError
@@ -19,6 +20,10 @@ parser.add_argument("wallet_address")
 parser.add_argument("--nft-id", required=True, type=int, help="NFT token ID")
 parser.add_argument("--username", default="admin", help="Linux username (default: admin)")
 args = parser.parse_args()
+
+if not re.match(r'^[a-zA-Z0-9]{1,128}$', args.wallet_address):
+    print(f"Error: Invalid wallet address format: {args.wallet_address}", file=sys.stderr)
+    sys.exit(1)
 
 db = get_database()
 vm = db.get_vm(args.vm_name)
