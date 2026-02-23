@@ -1,6 +1,6 @@
 # Blockhost Provisioner Project Manifest
 # Machine-readable overview for integration and automation
-# Last updated: 2026-02-22 (make --nft-token-id optional, relax GECOS_RE)
+# Last updated: 2026-02-23 (bridge port isolation on VM tap interfaces)
 
 name: blockhost-provisioner-proxmox
 version: "0.2.0"
@@ -142,7 +142,7 @@ entry_points:
 
   resume_vm:
     script: scripts/vm-resume.py
-    description: Resume a suspended VM, restoring it to active status
+    description: Resume a suspended VM, restoring it to active status (with bridge port isolation)
     required_args:
       - name: vm_name
         position: 1
@@ -199,7 +199,7 @@ entry_points:
 
   start_vm:
     script: scripts/vm-start.sh
-    description: Start a VM via root agent (qm start)
+    description: Start a VM via root agent (qm start), then enable bridge port isolation
     required_args:
       - name: vm_name
         position: 1
@@ -389,7 +389,7 @@ external_modules:
     provides:
       - blockhost.config: Path constants, config loading (load_db_config, load_web3_config, load_broker_allocation)
       - blockhost.vm_db: Database classes (VMDatabase, MockVMDatabase, get_database) with allocate_ip and allocate_ipv6
-      - blockhost.root_agent: Root agent client (qm_start, qm_stop, qm_shutdown, qm_destroy, ip6_route_add, ip6_route_del, RootAgentError)
+      - blockhost.root_agent: Root agent client (qm_start, qm_stop, qm_shutdown, qm_destroy, ip6_route_add, ip6_route_del, call, RootAgentError)
       - blockhost.cloud_init: Template rendering (render_cloud_init, find_template, list_templates)
     cloud_init_templates:
       - nft-auth.yaml (NFT authentication with web3-auth-svc)
@@ -461,6 +461,7 @@ privilege_separation:
     - qm_update_gecos: Update VM user GECOS field
     - ip6_route_add: Add IPv6 host route (shipped by blockhost-common)
     - ip6_route_del: Remove IPv6 host route (shipped by blockhost-common)
+    - bridge_port_isolate: Set bridge port isolation on tap interface (shipped by blockhost-common)
   direct_as_blockhost:
     - terraform: HTTP API auth, terraform_dir owned by blockhost
   exceptions:
@@ -502,7 +503,8 @@ workflow:
       - 5: Generate .tf.json config (with dual-stack IPv4/IPv6, datastore_id, ipv6_gateway)
       - 6: Run terraform apply (if --apply)
       - 7: Add IPv6 host route via root agent (ip6_route_add <ipv6>/128 vmbr0)
-      - 8: Print JSON summary as last stdout line
+      - 8: Enable bridge port isolation on tap interface (non-fatal, warns on failure)
+      - 9: Print JSON summary as last stdout line
     on_failure:
       - VM not created, resources released
     blockhost_common_requirements: |
@@ -524,3 +526,8 @@ workflow:
         After VM creation, a /128 host route is added via root agent (ip6_route_add)
         to direct inbound traffic via vmbr0. This route is removed when the VM is
         destroyed via vm-gc.py (ip6_route_del).
+      bridge_port_isolation: |
+        After every VM start (creation, manual start, resume), bridge port isolation
+        is enabled on the tap interface (tap{vmid}i0) via the root agent's
+        bridge-port-isolate action. This prevents VMs on the same bridge from seeing
+        each other's L2 traffic. Failure is non-fatal — logged as a warning.
