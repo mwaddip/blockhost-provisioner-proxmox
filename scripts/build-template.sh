@@ -30,11 +30,21 @@ fi
 # Extract just the filename for use in commands
 LIBPAM_WEB3_FILENAME=$(basename "${LIBPAM_WEB3_DEB}")
 
+# Path to blockhost-auth-svc .deb package (optional — template works without it)
+if [[ -z "${AUTH_SVC_DEB:-}" ]]; then
+    AUTH_SVC_DEB=$(ls /var/lib/blockhost/template-packages/blockhost-auth-svc_*.deb 2>/dev/null | head -1 || true)
+fi
+
+if [[ -n "${AUTH_SVC_DEB}" ]]; then
+    AUTH_SVC_FILENAME=$(basename "${AUTH_SVC_DEB}")
+fi
+
 echo "=== Proxmox Template Builder ==="
 echo "Host: ${PROXMOX_HOST}"
 echo "Template VMID: ${TEMPLATE_VMID}"
 echo "Storage: ${STORAGE}"
 echo "libpam-web3: ${LIBPAM_WEB3_DEB}"
+echo "auth-svc: ${AUTH_SVC_DEB:-not found}"
 echo ""
 
 # Helper functions for local/remote execution
@@ -90,11 +100,16 @@ cp "/tmp/${IMAGE_NAME}" "${WORK_IMAGE}"
 echo "Installing qemu-guest-agent and libpam-web3 into image..."
 sudo virt-customize -a "${WORK_IMAGE}" \
     --install qemu-guest-agent \
+    --run-command 'curl -fsSL https://deb.nodesource.com/setup_22.x | bash -' \
+    --install nodejs \
     --copy-in "${LIBPAM_WEB3_DEB}":/tmp \
     --run-command "dpkg -i /tmp/${LIBPAM_WEB3_FILENAME} || apt-get -f install -y" \
+    ${AUTH_SVC_DEB:+--copy-in "${AUTH_SVC_DEB}":/tmp} \
+    ${AUTH_SVC_DEB:+--run-command "dpkg -i /tmp/${AUTH_SVC_FILENAME} || apt-get -f install -y"} \
     --run-command 'systemctl enable web3-auth-svc' \
     --run-command 'systemctl enable qemu-guest-agent' \
-    --delete "/tmp/${LIBPAM_WEB3_FILENAME}"
+    --delete "/tmp/${LIBPAM_WEB3_FILENAME}" \
+    ${AUTH_SVC_DEB:+--delete "/tmp/${AUTH_SVC_FILENAME}"}
 
 IMAGE_SIZE=$(du -h "${WORK_IMAGE}" | cut -f1)
 echo "Customized image size: ${IMAGE_SIZE}"
