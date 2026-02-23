@@ -50,7 +50,7 @@ from blockhost.config import (
     load_web3_config,
 )
 from blockhost.provisioner_proxmox import get_terraform_dir, sanitize_resource_name
-from blockhost.root_agent import RootAgentError, ip6_route_add
+from blockhost.root_agent import RootAgentError, call, ip6_route_add
 from blockhost.vm_db import get_database
 
 
@@ -516,6 +516,14 @@ Examples:
                 print(f"  IPv6 host route: {ipv6_address}/128 via vmbr0")
             except RootAgentError as e:
                 print(f"  Warning: Failed to add IPv6 host route: {e}")
+
+        # Enable bridge port isolation so VMs cannot see each other's L2 traffic
+        tap_dev = f"tap{vmid}i0"
+        try:
+            call("bridge-port-isolate", dev=tap_dev)
+            print(f"  Bridge port isolation enabled on {tap_dev}")
+        except RootAgentError as e:
+            print(f"  Warning: bridge port isolation failed on {tap_dev}: {e}")
 
         # Print JSON summary for engine consumption (must be last line on stdout)
         summary = {
