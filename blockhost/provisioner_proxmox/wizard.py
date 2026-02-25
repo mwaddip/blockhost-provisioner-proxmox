@@ -58,7 +58,7 @@ def wizard_proxmox():
             "gc_grace_days": _safe_int(request.form.get("gc_grace_days"), 7),
             "terraform_dir": "/var/lib/blockhost/terraform",
         }
-        return redirect(url_for("wizard_ipv6"))
+        return redirect(url_for("wizard_connectivity"))
 
     return render_template("provisioner_proxmox/proxmox.html", detected=detected)
 
