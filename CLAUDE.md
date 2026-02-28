@@ -29,7 +29,7 @@ See `SPECIAL.md` for full stat definitions and the priority allocation model.
 
 ## Project Scope
 
-**This Claude session only modifies blockhost-provisioner-proxmox.** Changes to dependency packages (blockhost-common, blockhost-broker, blockhost-engine) should be done in their respective Claude sessions with separate prompts.
+**This Claude session only modifies blockhost-provisioner-proxmox.** Changes to dependency packages (blockhost-common, blockhost-broker, blockhost-engine-evm) should be done in their respective Claude sessions with separate prompts.
 
 ## Project Overview
 

@@ -4,7 +4,7 @@ VM Resume Script
 
 Resumes a suspended VM, restoring it to active status.
 
-This is called by blockhost-engine when a SubscriptionExtended event
+This is called by blockhost-engine-evm when a SubscriptionExtended event
 comes in for an expired (but not yet destroyed) subscription.
 
 Usage:
