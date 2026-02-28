@@ -27,7 +27,7 @@ sudo dpkg -i blockhost-common_*.deb
 sudo dpkg -i blockhost-provisioner-proxmox_*.deb
 
 # Initialize server (generates keys and config)
-sudo /path/to/blockhost-engine/scripts/init-server.sh
+sudo /path/to/blockhost-engine-evm/scripts/init-server.sh
 
 # Configure settings
 sudo editor /etc/blockhost/db.yaml
@@ -181,7 +181,7 @@ Database configuration: production DB file path, terraform_dir, IP pool range, V
 ## Setup
 
 1. Install blockhost-common package
-2. Run `init-server.sh` from blockhost-engine to generate keys and config
+2. Run `init-server.sh` from blockhost-engine-evm to generate keys and config
 3. Edit `/etc/blockhost/web3-defaults.yaml` with your contract address and RPC URL
 4. Edit `/etc/blockhost/db.yaml` with your terraform_dir path
 5. Build the template: `./scripts/build-template.sh`

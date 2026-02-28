@@ -12,7 +12,7 @@
 
 `build/` is `.gitignore`'d and not tracked by git, but if it exists locally from a previous `build-deb.sh` run, it contains two outdated Python files:
 
-- `build/pkg/.../mint_nft.py` — from before NFT minting moved to blockhost-engine. Not copied by current `build-deb.sh`, just leftover.
+- `build/pkg/.../mint_nft.py` — from before NFT minting moved to blockhost-engine-evm. Not copied by current `build-deb.sh`, just leftover.
 - `build/pkg/.../vm_generator.py` — old version that imports removed symbols (`from mint_nft import mint_nft`, `from blockhost.config import get_terraform_dir`).
 
 No code change needed — just a `rm -rf build/` to clean the workspace.

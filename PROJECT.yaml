@@ -294,7 +294,7 @@ provisioner_manifest:
   description: |
     Declares what commands this provisioner provides, how its wizard integrates,
     what finalization steps it owns, and where its root agent actions live.
-    One active provisioner per host. Read by blockhost-engine's ProvisionerDispatcher.
+    One active provisioner per host. Read by blockhost-engine-evm's ProvisionerDispatcher.
   commands:
     create: blockhost-vm-create
     destroy: blockhost-vm-destroy
@@ -432,7 +432,7 @@ integration:
     setup_steps:
       - Install blockhost-common package (provides config modules)
       - Install blockhost-provisioner-proxmox package (provides this package)
-      - Run init-server.sh from blockhost-engine to generate keys and config
+      - Run init-server.sh from blockhost-engine-evm to generate keys and config
       - Configure /etc/blockhost/db.yaml with terraform_dir path
       - Configure /etc/blockhost/web3-defaults.yaml with contract details
       - Run build-template.sh to deploy template to Proxmox
