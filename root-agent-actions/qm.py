@@ -87,6 +87,7 @@ def handle_qm_importdisk(params):
 
     if not isinstance(image_path, str) or not image_path:
         return {'ok': False, 'error': 'image_path is required'}
+    image_path = os.path.realpath(image_path)
     if not (image_path.startswith('/var/lib/blockhost/') or image_path.startswith('/tmp/')):
         return {'ok': False, 'error': 'image_path must be under /var/lib/blockhost/ or /tmp/'}
     if not os.path.isfile(image_path):
