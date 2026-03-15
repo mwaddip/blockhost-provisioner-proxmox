@@ -2,6 +2,7 @@
   "name": "proxmox",
   "version": "0.2.0",
   "display_name": "Proxmox VE + Terraform",
+  "accent_color": "#2b1d0a",
 
   "commands": {
     "create":         "blockhost-vm-create",
