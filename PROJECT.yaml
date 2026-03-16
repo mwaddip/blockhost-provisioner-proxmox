@@ -1,6 +1,6 @@
 # Blockhost Provisioner Project Manifest
 # Machine-readable overview for integration and automation
-# Last updated: 2026-02-24 (Node.js 22 + blockhost-auth-svc in template build)
+# Last updated: 2026-03-16 (simplify wizard page, auto-detect network)
 
 name: blockhost-provisioner-proxmox
 version: "0.2.0"
