@@ -115,6 +115,8 @@ If yes to any, update `PROJECT.yaml` accordingly.
 | `scripts/vm-list.sh` | List all VMs |
 | `scripts/vm-gc.py` | Garbage collection for expired VMs |
 | `scripts/vm-resume.py` | Resume a suspended VM |
+| `scripts/vm-metrics.py` | Collect VM resource usage via Proxmox API |
+| `scripts/vm-throttle.py` | Apply/remove VM resource limits |
 | `scripts/vm-update-gecos.sh` | Update VM GECOS after ownership transfer |
 | `scripts/build-template.sh` | Proxmox template builder |
 | `scripts/provisioner-detect.sh` | Detect Proxmox VE host |

@@ -1,6 +1,6 @@
 # Blockhost Provisioner Project Manifest
 # Machine-readable overview for integration and automation
-# Last updated: 2026-03-16 (simplify wizard page, auto-detect network)
+# Last updated: 2026-03-16 (implement vm-metrics and vm-throttle commands)
 
 name: blockhost-provisioner-proxmox
 version: "0.2.0"
@@ -252,14 +252,53 @@ entry_points:
       blockhost-vm-list --json
 
   vm_metrics:
-    script: scripts/vm-metrics.sh
-    description: VM metrics (stub — future functionality)
-    note: Exits 0, not yet implemented
+    script: scripts/vm-metrics.py
+    description: Collect VM resource usage via Proxmox API (CPU, memory, disk, network, uptime)
+    required_args:
+      - name: vm_name
+        position: 1
+        description: Name of the VM to query
+    json_output:
+      description: |
+        Outputs a JSON object with 16 fields per the contract (PROVISIONER_INTERFACE.md 2.12).
+        Fields requiring guest agent return -1 when agent is unresponsive.
+        Rate-based fields derived from PVE RRD data (last sample).
+    example: |
+      blockhost-vm-metrics myvm
 
   vm_throttle:
-    script: scripts/vm-throttle.sh
-    description: VM resource throttling (stub — future functionality)
-    note: Exits 0, not yet implemented
+    script: scripts/vm-throttle.py
+    description: Apply or remove resource limits on a running VM via root agent
+    required_args:
+      - name: vm_name
+        position: 1
+        description: Name of the VM to throttle
+    optional_args:
+      - name: --cpu-shares
+        type: int
+        description: CPU weight (1-10000, default 1024)
+      - name: --cpu-quota
+        type: int
+        description: Hard CPU cap as percentage of allocated vCPUs (1-100)
+      - name: --bandwidth-in
+        type: int
+        description: Inbound bandwidth limit in kbps (0 = unlimited)
+      - name: --bandwidth-out
+        type: int
+        description: Outbound bandwidth limit in kbps (0 = unlimited)
+      - name: --iops-read
+        type: int
+        description: Read IOPS limit (0 = unlimited)
+      - name: --iops-write
+        type: int
+        description: Write IOPS limit (0 = unlimited)
+      - name: --reset
+        type: flag
+        description: Remove all throttling, restore defaults
+    example: |
+      blockhost-vm-throttle myvm --cpu-quota 50
+      blockhost-vm-throttle myvm --bandwidth-out 10000
+      blockhost-vm-throttle myvm --reset
 
   provisioner_detect:
     script: scripts/provisioner-detect.sh
@@ -353,6 +392,8 @@ root_agent_actions:
     qm-set: Set VM configuration with allowlisted keys
     qm-template: Convert a VM to a template
     qm-update-gecos: Update a VM user's GECOS field via qm guest exec
+    pve-set-throttle: Apply CPU/IOPS limits via qm set (dedicated throttle allowlist)
+    tc-rate-limit: Apply/remove bandwidth limits via tc on VM tap interfaces
   security:
     - All vmids validated against VMID_MIN/VMID_MAX range
     - qm-create args restricted to QM_CREATE_ALLOWED_ARGS allowlist
@@ -360,6 +401,8 @@ root_agent_actions:
     - qm-importdisk image paths restricted to /var/lib/blockhost/ and /tmp/
     - qm-importdisk storage names validated against STORAGE_RE regex
     - qm-update-gecos username validated against USERNAME_RE, gecos against GECOS_RE (wallet=ADDR or wallet=ADDR,nft=ID)
+    - pve-set-throttle keys restricted to THROTTLE_ALLOWED_KEYS, delete keys to THROTTLE_DELETABLE_KEYS
+    - tc-rate-limit dev validated against TAP_RE (tap{N}i{N}), rate_kbps must be positive int
 
 # Wizard plugin (loaded by main app's installer)
 wizard_plugin:
@@ -466,6 +509,8 @@ privilege_separation:
     - ip6_route_add: Add IPv6 host route (shipped by blockhost-common)
     - ip6_route_del: Remove IPv6 host route (shipped by blockhost-common)
     - bridge_port_isolate: Set bridge port isolation on tap interface (shipped by blockhost-common)
+    - pve_set_throttle: Apply CPU/IOPS throttle limits via qm set
+    - tc_rate_limit: Apply/remove bandwidth limits via tc on tap interfaces
   direct_as_blockhost:
     - terraform: HTTP API auth, terraform_dir owned by blockhost
   exceptions:
