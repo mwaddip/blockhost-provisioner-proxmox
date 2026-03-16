@@ -5,27 +5,33 @@ VM Generator Script
 Generates Terraform configuration files for Proxmox VMs with NFT-based
 web3 authentication.
 
-Default workflow (with --apply):
-1. Reserve NFT token ID
-2. Allocate resources (VMID, IPv4, IPv6)
-3. Generate Terraform config with cloud-init
-4. Apply Terraform to create VM
-5. Mint NFT to owner wallet (unless --no-mint)
-6. Print JSON summary as last line
+Workflow (with --apply):
+1. Allocate resources (VMID, IPv4, IPv6)
+2. Generate Terraform config with cloud-init
+3. Apply Terraform to create VM
+4. Print JSON summary as last line
 
-With --no-mint (engine-driven workflow):
-  Steps 1-4 + 6 only. The engine handles minting separately.
+The engine owns the NFT lifecycle. At creation time, --nft-token-id is
+optional — the VM is created with GECOS wallet=ADDRESS. After minting,
+the engine calls update-gecos to set the token ID.
 
 Usage:
-    # Engine-driven: create VM, skip minting, get JSON summary
-    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply --no-mint
-
-    # Legacy: create VM and mint inline
+    # Engine-driven: create VM (NFT assigned later via update-gecos)
     python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply
 
+    # With known NFT token ID
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... \
+        --nft-token-id 42 --apply
+
     # Pre-rendered cloud-init from engine
-    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply --no-mint \
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply \
         --cloud-init-content /path/to/rendered.yaml
+
+    # Without web3 auth
+    python3 vm-generator.py web-001 --no-web3 --cloud-init webserver
+
+    # Test with mock database
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --mock --apply
 """
 
 import argparse
@@ -43,45 +49,9 @@ from blockhost.config import (
     load_db_config,
     load_web3_config,
 )
-from blockhost.root_agent import RootAgentError, ip6_route_add
+from blockhost.provisioner_proxmox import get_terraform_dir, sanitize_resource_name
+from blockhost.root_agent import RootAgentError, call, ip6_route_add
 from blockhost.vm_db import get_database
-
-
-def get_next_token_id_from_contract(config: dict) -> int:
-    """
-    Query the NFT contract's totalSupply() to get the next token ID.
-
-    This is more reliable than the local database which can become stale.
-    Returns totalSupply (which will be the next minted token's ID).
-    """
-    nft_contract = config["blockchain"]["nft_contract"]
-    rpc_url = config["blockchain"]["rpc_url"]
-
-    cmd = [
-        "cast", "call",
-        nft_contract,
-        "totalSupply()(uint256)",
-        "--rpc-url", rpc_url,
-    ]
-
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            raise RuntimeError(f"cast call failed: {result.stderr}")
-
-        # Parse the output (cast returns the number directly)
-        total_supply = int(result.stdout.strip())
-        return total_supply
-    except FileNotFoundError:
-        raise RuntimeError("Foundry 'cast' not found. Install from https://getfoundry.sh")
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("Contract call timed out")
-
-
-def get_terraform_dir() -> Path:
-    """Get the Terraform working directory from db config."""
-    config = load_db_config()
-    return Path(config["terraform_dir"])
 
 
 def load_terraform_vars() -> dict:
@@ -109,11 +79,6 @@ def load_terraform_vars() -> dict:
     return variables
 
 
-def sanitize_resource_name(name: str) -> str:
-    """Convert VM name to valid Terraform resource name."""
-    return re.sub(r"[^a-zA-Z0-9_]", "_", name)
-
-
 def load_ssh_keys() -> list[str]:
     """Load SSH public keys from common locations."""
     keys = []
@@ -135,8 +100,8 @@ def generate_tf_config(
     gateway: str,
     tf_dir: Path,
     cpu_cores: int = 1,
-    memory_mb: int = 512,
-    disk_gb: int = 10,
+    memory_mb: int = 2048,
+    disk_gb: int = 20,
     template_vmid: int = 9001,
     node_name: str = "pve",
     tags: list[str] = None,
@@ -254,36 +219,28 @@ def run_terraform(action: str = "plan", target: str = None) -> int:
     return result.returncode
 
 
-def mark_nft_failed_safe(db, nft_token_id: int):
-    """Mark NFT token as failed, ignoring if not reserved in database."""
-    try:
-        db.mark_nft_failed(nft_token_id)
-        print(f"NFT token {nft_token_id} marked as failed")
-    except ValueError:
-        pass
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Generate Terraform configuration for Proxmox VMs with NFT auth",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Engine-driven: create VM, skip minting, get JSON summary
-    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply --no-mint
-
-    # Legacy: create VM and mint NFT inline
+    # Engine-driven: create VM (NFT assigned later via update-gecos)
     python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply
 
+    # With known NFT token ID
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... \\
+        --nft-token-id 42 --apply
+
     # Pre-rendered cloud-init from engine
-    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply --no-mint \\
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --apply \\
         --cloud-init-content /path/to/rendered.yaml
 
     # Without web3 auth
     python3 vm-generator.py web-001 --no-web3 --cloud-init webserver
 
     # Test with mock database
-    python3 vm-generator.py web-001 --owner-wallet 0x1234... --mock --no-mint --apply
+    python3 vm-generator.py web-001 --owner-wallet 0x1234... --mock --apply
         """
     )
 
@@ -291,8 +248,8 @@ Examples:
     parser.add_argument("--purpose", default="", help="Purpose/description of the VM")
     parser.add_argument("--owner", default="admin", help="VM owner (default: admin)")
     parser.add_argument("--cpu", type=int, default=1, help="Number of CPU cores (default: 1)")
-    parser.add_argument("--memory", type=int, default=512, help="Memory in MB (default: 512)")
-    parser.add_argument("--disk", type=int, default=10, help="Disk size in GB (default: 10)")
+    parser.add_argument("--memory", type=int, default=2048, help="Memory in MB (default: 2048)")
+    parser.add_argument("--disk", type=int, default=20, help="Disk size in GB (default: 20)")
     parser.add_argument("--template-vmid", type=int, default=9001, help="Template VM ID (default: 9001)")
     parser.add_argument("--tags", nargs="+", default=[], help="Tags for the VM")
     parser.add_argument("--expiry-days", type=int, default=30, help="Days until VM expires (default: 30)")
@@ -308,13 +265,8 @@ Examples:
 
     # Web3 / NFT options
     parser.add_argument("--owner-wallet", help="Wallet address to receive the access NFT")
-    parser.add_argument("--user-signature",
-                        help="User's decrypted signature from subscription system (hex)")
-    parser.add_argument("--public-secret",
-                        help="Message the user signed during subscription")
+    parser.add_argument("--nft-token-id", type=int, help="NFT token ID (reserved by engine)")
     parser.add_argument("--no-web3", action="store_true", help="Disable web3 auth (use standard cloud-init)")
-    parser.add_argument("--no-mint", "--skip-mint", action="store_true",
-                        help="Skip NFT minting (engine handles minting separately)")
     parser.add_argument("--cloud-init", dest="cloud_init_template",
                         help="Cloud-init template name (default: nft-auth when web3 enabled)")
     parser.add_argument("--cloud-init-content",
@@ -334,13 +286,21 @@ Examples:
     if args.disk < 1:
         parser.error("--disk must be at least 1")
 
-    # Validate wallet address format
-    if args.owner_wallet and not re.match(r'^0x[0-9a-fA-F]{40}$', args.owner_wallet):
-        parser.error("--owner-wallet must be a valid Ethereum address (0x followed by 40 hex characters)")
+    # Validate wallet address format (alphanumeric, matches GECOS_RE expectations)
+    if args.owner_wallet and not re.match(r'^[a-zA-Z0-9]{1,128}$', args.owner_wallet):
+        parser.error("--owner-wallet must be 1-128 alphanumeric characters")
 
-    # Validate user signature format
-    if args.user_signature and not re.match(r'^0x[0-9a-fA-F]+$', args.user_signature):
-        parser.error("--user-signature must be a hex string starting with 0x")
+    # Validate manually specified IP addresses
+    if args.ip:
+        try:
+            ipaddress.IPv4Address(args.ip)
+        except ValueError:
+            parser.error(f"--ip is not a valid IPv4 address: {args.ip}")
+    if args.ipv6:
+        try:
+            ipaddress.IPv6Address(args.ipv6)
+        except ValueError:
+            parser.error(f"--ipv6 is not a valid IPv6 address: {args.ipv6}")
 
     # Load terraform.tfvars for defaults
     tfvars = load_terraform_vars()
@@ -360,6 +320,8 @@ Examples:
     web3_enabled = not args.no_web3
     if web3_enabled and not args.owner_wallet:
         parser.error("--owner-wallet is required (or use --no-web3 to disable NFT auth)")
+
+    nft_token_id = args.nft_token_id
 
     # Initialize database
     db = get_database(use_mock=args.mock)
@@ -416,24 +378,6 @@ Examples:
     db_config = load_db_config()
     gateway = db_config["ip_pool"]["gateway"]
 
-    # Get NFT token ID from contract's totalSupply (more reliable than local database)
-    nft_token_id = None
-    web3_config = None
-    if web3_enabled:
-        web3_config = load_web3_config()
-        try:
-            nft_token_id = get_next_token_id_from_contract(web3_config)
-            print(f"Next NFT token ID (from contract): {nft_token_id}")
-            # Reserve in database so mark_nft_minted() can find it later
-            # Note: requires blockhost-common with token_id parameter support
-            db.reserve_nft_token_id(args.name, token_id=nft_token_id)
-            print(f"Reserved token {nft_token_id} in database")
-        except Exception as e:
-            print(f"Warning: Could not query contract totalSupply: {e}")
-            print("Falling back to database reservation...")
-            nft_token_id = db.reserve_nft_token_id(args.name)
-            print(f"Reserved NFT token ID (from database): {nft_token_id}")
-
     # Build cloud-init content
     cloud_init_content = None
     template_name = args.cloud_init_template
@@ -451,7 +395,7 @@ Examples:
         if not template_name:
             template_name = "nft-auth"
 
-        # web3_config was already loaded above for token ID query
+        web3_config = load_web3_config()
 
         # Format SSH keys for cloud-init
         ssh_keys_yaml = ""
@@ -482,15 +426,14 @@ Examples:
             "SIGNING_HOST": signing_host,
             "SIGNING_DOMAIN": signing_domain,
             "USERNAME": args.username,
-            "NFT_TOKEN_ID": str(nft_token_id),
-            "CHAIN_ID": str(web3_config["blockchain"]["chain_id"]),
-            "NFT_CONTRACT": web3_config["blockchain"]["nft_contract"],
-            "RPC_URL": web3_config["blockchain"]["rpc_url"],
+            "WALLET_ADDRESS": args.owner_wallet,
             "OTP_LENGTH": str(web3_config["auth"]["otp_length"]),
             "OTP_TTL": str(web3_config["auth"]["otp_ttl_seconds"]),
             "SECRET_KEY": secret_key,
             "SSH_KEYS": f"\n{ssh_keys_yaml}" if ssh_keys_yaml else "[]",
         }
+        if nft_token_id is not None:
+            variables["NFT_TOKEN_ID"] = str(nft_token_id)
 
         cloud_init_content = render_cloud_init(f"{template_name}.yaml", variables)
     elif template_name:
@@ -539,15 +482,13 @@ Examples:
     )
     print(f"Registered VM '{args.name}' - expires {vm['expires_at']}")
     if nft_token_id is not None:
-        print(f"  NFT token ID: {nft_token_id} (reserved)")
+        print(f"  NFT token ID: {nft_token_id}")
 
     # Apply if requested
     if args.apply:
         print("\nInitializing Terraform...")
         if run_terraform("init") != 0:
             print("Error: terraform init failed")
-            if nft_token_id is not None:
-                mark_nft_failed_safe(db, nft_token_id)
             sys.exit(1)
 
         print("\nApplying Terraform configuration...")
@@ -557,8 +498,6 @@ Examples:
 
         if apply_result != 0:
             print(f"\nError: terraform apply failed")
-            if nft_token_id is not None:
-                mark_nft_failed_safe(db, nft_token_id)
             sys.exit(1)
 
         print(f"\nVM '{args.name}' created successfully!")
@@ -578,63 +517,13 @@ Examples:
             except RootAgentError as e:
                 print(f"  Warning: Failed to add IPv6 host route: {e}")
 
-        # Mint NFT after successful VM creation (legacy mode only)
-        if web3_enabled and nft_token_id is not None and not args.no_mint:
-            print(f"\nMinting NFT #{nft_token_id} to {args.owner_wallet}...")
-            try:
-                # web3_config was already loaded earlier
-
-                # Encrypt connection details if user signature provided
-                user_encrypted = "0x"
-                public_secret = args.public_secret or ""
-
-                if args.user_signature:
-                    print("Encrypting connection details...")
-                    # Use IPv6 if available (public), otherwise fall back to IPv4 (private)
-                    nft_hostname = ipv6_address or ip_address
-                    connection_details = json.dumps({
-                        "hostname": nft_hostname,
-                        "port": 22,
-                        "username": args.username
-                    })
-                    encrypt_result = subprocess.run(
-                        [
-                            "pam_web3_tool", "encrypt-symmetric",
-                            "--signature", args.user_signature,
-                            "--plaintext", connection_details
-                        ],
-                        capture_output=True,
-                        text=True
-                    )
-                    if encrypt_result.returncode != 0:
-                        raise RuntimeError(f"Failed to encrypt connection details: {encrypt_result.stderr}")
-                    # Extract hex value from output (tool prints "Ciphertext (hex): 0x...")
-                    output = encrypt_result.stdout.strip()
-                    hex_match = re.search(r'(0x[0-9a-fA-F]+)', output)
-                    if not hex_match:
-                        raise RuntimeError(f"Could not parse encrypted output: {output[:100]}")
-                    user_encrypted = hex_match.group(1)
-                    print(f"Encrypted: {user_encrypted[:20]}...{user_encrypted[-8:]}")
-
-                from blockhost.mint_nft import mint_nft
-                tx_hash = mint_nft(
-                    owner_wallet=args.owner_wallet,
-                    machine_id=args.name,
-                    user_encrypted=user_encrypted,
-                    public_secret=public_secret,
-                    config=web3_config,
-                )
-                db.mark_nft_minted(nft_token_id, args.owner_wallet)
-                print(f"NFT #{nft_token_id} minted successfully!")
-                if tx_hash:
-                    print(f"  TX: {tx_hash}")
-            except Exception as e:
-                print(f"\nWarning: NFT minting failed: {e}")
-                print(f"VM was created but NFT was not minted.")
-                print(f"Token {nft_token_id} is still reserved. Retry with:")
-                print(f"  blockhost-mint-nft --owner-wallet {args.owner_wallet} --machine-id {args.name}")
-        elif web3_enabled and args.no_mint:
-            print(f"\nSkipped NFT minting (--no-mint). Token {nft_token_id} remains reserved.")
+        # Enable bridge port isolation so VMs cannot see each other's L2 traffic
+        tap_dev = f"tap{vmid}i0"
+        try:
+            call("bridge-port-isolate", dev=tap_dev)
+            print(f"  Bridge port isolation enabled on {tap_dev}")
+        except RootAgentError as e:
+            print(f"  Warning: bridge port isolation failed on {tap_dev}: {e}")
 
         # Print JSON summary for engine consumption (must be last line on stdout)
         summary = {
@@ -652,9 +541,6 @@ Examples:
         print(f"  cd {get_terraform_dir()}")
         print(f"  terraform init")
         print(f"  terraform apply")
-        if web3_enabled:
-            print(f"\nAfter apply, mint the NFT:")
-            print(f"  blockhost-mint-nft --owner-wallet {args.owner_wallet} --machine-id {args.name}")
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ VM Resume Script
 
 Resumes a suspended VM, restoring it to active status.
 
-This is called by blockhost-engine when a SubscriptionExtended event
+This is called by blockhost-engine-evm when a SubscriptionExtended event
 comes in for an expired (but not yet destroyed) subscription.
 
 Usage:
@@ -19,11 +19,12 @@ The script:
 """
 
 import argparse
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 
 from blockhost.config import load_db_config
-from blockhost.root_agent import RootAgentError, qm_start
+from blockhost.root_agent import RootAgentError, call, qm_start
 from blockhost.vm_db import get_database
 
 
@@ -75,6 +76,11 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    # Validate VM name format
+    if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9._-]*$', args.vm_name):
+        print("Error: Invalid VM name format", file=sys.stderr)
+        return 1
 
     # Initialize database
     db = get_database(use_mock=args.mock)
@@ -128,6 +134,14 @@ Examples:
         return 1
 
     print(f"  {message}")
+
+    # Enable bridge port isolation so VMs cannot see each other's L2 traffic
+    tap_dev = f"tap{vmid}i0"
+    try:
+        call("bridge-port-isolate", dev=tap_dev)
+        print(f"  Bridge port isolation enabled on {tap_dev}")
+    except RootAgentError as e:
+        print(f"  Warning: bridge port isolation failed on {tap_dev}: {e}")
 
     # Update database
     try:

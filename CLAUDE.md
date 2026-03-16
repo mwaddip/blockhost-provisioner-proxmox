@@ -29,7 +29,7 @@ See `SPECIAL.md` for full stat definitions and the priority allocation model.
 
 ## Project Scope
 
-**This Claude session only modifies blockhost-provisioner-proxmox.** Changes to dependency packages (blockhost-common, blockhost-broker, libpam-web3-tools) should be done in their respective Claude sessions with separate prompts.
+**This Claude session only modifies blockhost-provisioner-proxmox.** Changes to dependency packages (blockhost-common, blockhost-broker, blockhost-engine-evm) should be done in their respective Claude sessions with separate prompts.
 
 ## Project Overview
 
@@ -38,7 +38,7 @@ This is the Proxmox VM provisioning component of the Blockhost system, providing
 **Dependencies:**
 - `blockhost-common` - Provides `blockhost.config`, `blockhost.vm_db`, and `blockhost.root_agent` modules
 - `blockhost-broker` - IPv6 tunnel broker (broker-client saves allocation to `/etc/blockhost/broker-allocation.json`)
-- `libpam-web3-tools` - Provides signing page HTML and `pam_web3_tool` CLI
+
 
 ## Environment Variables
 
@@ -55,20 +55,12 @@ source ~/projects/sharedenv/blockhost.env
 ## Quick Reference
 
 ```bash
-# Engine-driven: create VM, skip minting (engine mints separately)
-python3 scripts/vm-generator.py <name> --owner-wallet <0x...> --apply --no-mint
+# Engine-driven: create VM (NFT assigned later via update-gecos)
+python3 scripts/vm-generator.py <name> --owner-wallet <addr> --apply
 
 # Engine-driven with pre-rendered cloud-init
-python3 scripts/vm-generator.py <name> --owner-wallet <0x...> --apply --no-mint \
+python3 scripts/vm-generator.py <name> --owner-wallet <addr> --apply \
     --cloud-init-content /path/to/rendered.yaml
-
-# Legacy: create VM and mint NFT inline
-python3 scripts/vm-generator.py <name> --owner-wallet <0x...> [--apply]
-
-# Legacy: with encrypted connection details (subscription system workflow)
-python3 scripts/vm-generator.py <name> --owner-wallet <0x...> \
-    --user-signature <0x...> --public-secret "libpam-web3:<address>:<nonce>" \
-    [--apply]
 
 # VM lifecycle commands
 blockhost-vm-start <name>
@@ -76,7 +68,10 @@ blockhost-vm-stop <name>
 blockhost-vm-kill <name>
 blockhost-vm-destroy <name>
 blockhost-vm-status <name>
-blockhost-vm-list [--json]
+blockhost-vm-list [--format json]
+
+# Update VM GECOS after ownership transfer
+blockhost-vm-update-gecos <name> <wallet-address> --nft-id <id>
 
 # Garbage collect expired VMs
 python3 scripts/vm-gc.py [--execute] [--grace-days N]
@@ -120,6 +115,7 @@ If yes to any, update `PROJECT.yaml` accordingly.
 | `scripts/vm-list.sh` | List all VMs |
 | `scripts/vm-gc.py` | Garbage collection for expired VMs |
 | `scripts/vm-resume.py` | Resume a suspended VM |
+| `scripts/vm-update-gecos.sh` | Update VM GECOS after ownership transfer |
 | `scripts/build-template.sh` | Proxmox template builder |
 | `scripts/provisioner-detect.sh` | Detect Proxmox VE host |
 | `blockhost/provisioner_proxmox/wizard.py` | Wizard plugin (Blueprint, finalization, summary) |
@@ -156,7 +152,7 @@ This is typically a separate directory with Proxmox provider credentials and ter
 
 Always test with mock database first:
 ```bash
-python3 scripts/vm-generator.py test-vm --owner-wallet 0x1234... --mock --skip-mint
+python3 scripts/vm-generator.py test-vm --owner-wallet 0x1234... --mock --apply
 ```
 
 ## Package Integration
@@ -164,19 +160,15 @@ python3 scripts/vm-generator.py test-vm --owner-wallet 0x1234... --mock --skip-m
 When installed as a package:
 1. Install `blockhost-common` first (provides config and database modules)
 2. Install `blockhost-provisioner-proxmox` (this package)
-3. Install `libpam-web3-tools` (provides signing page and pam_web3_tool)
-4. Configure `/etc/blockhost/db.yaml` with correct `terraform_dir`
+3. Configure `/etc/blockhost/db.yaml` with correct `terraform_dir`
 5. Configure `/etc/blockhost/web3-defaults.yaml` with contract details
 6. Run scripts via: `blockhost-vm-create`, `blockhost-vm-gc`, etc.
 
 ## NFT Token ID Management
 
-NFT token IDs are sequential and tracked in the database:
-- `reserve_nft_token_id()` - Reserves next ID before VM creation
-- `mark_nft_minted()` - Called after successful mint
-- `mark_nft_failed()` - Called if VM creation fails
-
-**Never reuse failed token IDs** - they create gaps in the sequence but prevent on-chain conflicts.
+The engine owns the full NFT lifecycle. At VM creation, `--nft-token-id` is optional —
+the VM is created with GECOS `wallet=ADDRESS` (no nft field). After minting, the engine
+calls `blockhost-vm-update-gecos` with the actual token ID to set `wallet=ADDRESS,nft=ID`.
 
 ## Pre-Push Documentation Check
 
@@ -193,35 +185,6 @@ This applies to every commit, not just large changes. Small changes (renamed fla
 1. VM boots with libpam-web3 installed via cloud-init template
 2. `web3-auth-svc` serves signing page over HTTPS (port 8443, self-signed TLS)
 3. User visits `https://VM_IP:8443`, signs challenge with their wallet
-4. PAM module validates signature against NFT ownership on-chain
+4. PAM module validates signature locally and checks wallet against GECOS
 
 The signing page is served by web3-auth-svc over HTTPS. With callback support (v0.6.0+), the page auto-fills OTP and machine name — users just sign and press Enter.
-
-## Subscription System Workflow
-
-When using the subscription system, ECIES-encrypted connection details are stored on-chain in the NFT's `userEncrypted` field:
-
-1. **User signs message**: User signs `libpam-web3:<checksumAddress>:<nonce>` with their wallet
-2. **Subscription system calls vm-generator.py** with:
-   - `--owner-wallet`: User's wallet address
-   - `--user-signature`: The decrypted signature (hex)
-   - `--public-secret`: The original message that was signed
-3. **vm-generator.py** creates the VM, then:
-   - Encrypts connection details (hostname, port, username) using `pam_web3_tool encrypt-symmetric`
-   - Key derivation: `keccak256(signature_bytes)` → 32-byte AES key
-   - Mints NFT with encrypted data in `userEncrypted` field
-4. **User retrieves connection details**:
-   - Re-signs the same `publicSecret` with their wallet
-   - Derives decryption key from signature
-   - Decrypts `userEncrypted` to get hostname/port/username
-
-### NFT Contract Function
-
-```solidity
-mint(address to, bytes userEncrypted, string publicSecret,
-     string description, string imageUri, string animationUrlBase64, uint256 expiresAt)
-```
-
-- `userEncrypted`: AES-256-GCM encrypted JSON (or `0x` if not using encryption)
-- `publicSecret`: Format `libpam-web3:<checksumAddress>:<nonce>`
-- `animationUrlBase64`: Empty string (signing page is served from local filesystem, not embedded in NFT)

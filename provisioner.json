@@ -1,7 +1,8 @@
 {
   "name": "proxmox",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "display_name": "Proxmox VE + Terraform",
+  "accent_color": "#E57000",
 
   "commands": {
     "create":         "blockhost-vm-create",
@@ -15,7 +16,8 @@
     "throttle":       "blockhost-vm-throttle",
     "build-template": "blockhost-build-template",
     "gc":             "blockhost-vm-gc",
-    "resume":         "blockhost-vm-resume"
+    "resume":         "blockhost-vm-resume",
+    "update-gecos":   "blockhost-vm-update-gecos"
   },
 
   "setup": {

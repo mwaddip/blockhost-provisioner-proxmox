@@ -10,7 +10,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.1.0"
+VERSION="0.2.0"
 PACKAGE_NAME="blockhost-provisioner-proxmox_${VERSION}_all"
 BUILD_DIR="${SCRIPT_DIR}/build"
 
@@ -25,13 +25,14 @@ PKG="${BUILD_DIR}/pkg"
 # Create DEBIAN control files
 mkdir -p "${PKG}/DEBIAN"
 
-cat > "${PKG}/DEBIAN/control" << 'EOF'
+cat > "${PKG}/DEBIAN/control" << EOF
 Package: blockhost-provisioner-proxmox
-Version: 0.1.0
+Version: ${VERSION}
 Section: admin
 Priority: optional
 Architecture: all
-Depends: python3 (>= 3.10), blockhost-common (>= 0.1.0), libpam-web3-tools (>= 0.5.0)
+Depends: python3 (>= 3.10), blockhost-common (>= 0.1.0)
+Conflicts: blockhost-provisioner-libvirt
 Recommends: terraform (>= 1.0)
 Suggests: libguestfs-tools
 Maintainer: Blockhost Team <blockhost@example.com>
@@ -95,23 +96,17 @@ case "$1" in
         echo "  blockhost-vm-resume      - Resume a suspended VM"
         echo "  blockhost-build-template - Build Proxmox VM template"
         echo ""
-        echo "IMPORTANT: Manual installation required for:"
+        echo "IMPORTANT: Terraform must be installed manually:"
         echo ""
-        echo "  1. Terraform (https://terraform.io/downloads)"
-        echo "     curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp.gpg"
-        echo "     echo \"deb [signed-by=/usr/share/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com \$(lsb_release -cs) main\" | sudo tee /etc/apt/sources.list.d/hashicorp.list"
-        echo "     sudo apt update && sudo apt install terraform"
-        echo ""
-        echo "  2. Foundry/cast (https://book.getfoundry.sh/getting-started/installation)"
-        echo "     curl -L https://foundry.paradigm.xyz | bash"
-        echo "     foundryup"
+        echo "  curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp.gpg"
+        echo "  echo \"deb [signed-by=/usr/share/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com \$(lsb_release -cs) main\" | sudo tee /etc/apt/sources.list.d/hashicorp.list"
+        echo "  sudo apt update && sudo apt install terraform"
         echo ""
         echo "Quick start:"
-        echo "  1. Configure /etc/blockhost/web3-defaults.yaml (NFT contract)"
-        echo "  2. Create deployer key: /etc/blockhost/deployer.key"
-        echo "  3. Setup Terraform in /var/lib/blockhost/terraform/"
-        echo "  4. Build template: blockhost-build-template"
-        echo "  5. Create VM: blockhost-vm-create myvm --owner-wallet 0x... --apply"
+        echo "  1. Configure /etc/blockhost/web3-defaults.yaml"
+        echo "  2. Setup Terraform in /var/lib/blockhost/terraform/"
+        echo "  3. Build template: blockhost-build-template"
+        echo "  4. Create VM: blockhost-vm-create myvm --owner-wallet 0x... --nft-token-id 0 --apply"
         echo ""
         echo "See /usr/share/doc/blockhost-provisioner-proxmox/ for documentation."
         echo "============================================================"
@@ -182,6 +177,7 @@ cp "${SCRIPT_DIR}/scripts/vm-metrics.sh" "${PKG}/usr/bin/blockhost-vm-metrics"
 cp "${SCRIPT_DIR}/scripts/vm-throttle.sh" "${PKG}/usr/bin/blockhost-vm-throttle"
 cp "${SCRIPT_DIR}/scripts/vm-gc.py" "${PKG}/usr/bin/blockhost-vm-gc"
 cp "${SCRIPT_DIR}/scripts/vm-resume.py" "${PKG}/usr/bin/blockhost-vm-resume"
+cp "${SCRIPT_DIR}/scripts/vm-update-gecos.sh" "${PKG}/usr/bin/blockhost-vm-update-gecos"
 cp "${SCRIPT_DIR}/scripts/build-template.sh" "${PKG}/usr/bin/blockhost-build-template"
 cp "${SCRIPT_DIR}/scripts/provisioner-detect.sh" "${PKG}/usr/bin/blockhost-provisioner-detect"
 
@@ -196,6 +192,7 @@ chmod 755 "${PKG}/usr/bin/blockhost-vm-metrics"
 chmod 755 "${PKG}/usr/bin/blockhost-vm-throttle"
 chmod 755 "${PKG}/usr/bin/blockhost-vm-gc"
 chmod 755 "${PKG}/usr/bin/blockhost-vm-resume"
+chmod 755 "${PKG}/usr/bin/blockhost-vm-update-gecos"
 chmod 755 "${PKG}/usr/bin/blockhost-build-template"
 chmod 755 "${PKG}/usr/bin/blockhost-provisioner-detect"
 
