@@ -149,13 +149,14 @@ def _write_tfvars(path: Path, data: dict):
 
 
 def _detect_proxmox_resources() -> dict:
-    """Detect Proxmox VE resources (storage, bridges, node name)."""
+    """Detect Proxmox VE resources (storage, bridges, node name, network)."""
     detected = {
         "api_url": "https://127.0.0.1:8006",
         "node_name": socket.gethostname(),
         "storages": [],
         "bridges": [],
         "token_exists": False,
+        "network": {},
     }
 
     # Get storage pools
@@ -221,7 +222,108 @@ def _detect_proxmox_resources() -> dict:
     token_file = Path("/etc/blockhost/pve-token")
     detected["token_exists"] = token_file.exists()
 
+    # Detect network from bridge or primary interface
+    detected["network"] = _detect_network(detected["bridges"])
+
     return detected
+
+
+def _detect_network(bridges: list[str]) -> dict:
+    """Detect gateway and subnet from the bridge or primary interface.
+
+    Returns dict with ip, prefix, gateway, network_cidr, ip_start, ip_end.
+    Falls back to 192.168.122.x defaults if detection fails.
+    """
+    defaults = {
+        "gateway": "192.168.122.1",
+        "network_cidr": "192.168.122.0/24",
+        "ip_start": "192.168.122.100",
+        "ip_end": "192.168.122.199",
+    }
+
+    # Try bridge first (vmbr0), then fall back to default-route interface
+    iface = None
+    if bridges:
+        iface = bridges[0]
+    else:
+        try:
+            result = subprocess.run(
+                ["ip", "route", "show", "default"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                parts = result.stdout.strip().split()
+                dev_idx = parts.index("dev")
+                iface = parts[dev_idx + 1]
+        except Exception:
+            pass
+
+    if not iface:
+        return defaults
+
+    # Get IP + prefix from the interface
+    try:
+        result = subprocess.run(
+            ["ip", "-j", "addr", "show", iface],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return defaults
+
+        iface_info = json.loads(result.stdout)
+        ipv4_addr = None
+        ipv4_prefix = None
+        for info in iface_info:
+            for addr_info in info.get("addr_info", []):
+                if addr_info.get("family") == "inet":
+                    ipv4_addr = addr_info.get("local")
+                    ipv4_prefix = addr_info.get("prefixlen")
+                    break
+            if ipv4_addr:
+                break
+
+        if not ipv4_addr or not ipv4_prefix:
+            return defaults
+    except Exception:
+        return defaults
+
+    # Get gateway from default route
+    gateway = defaults["gateway"]
+    try:
+        result = subprocess.run(
+            ["ip", "route", "show", "default"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            parts = result.stdout.strip().split()
+            via_idx = parts.index("via")
+            gateway = parts[via_idx + 1]
+    except Exception:
+        pass
+
+    # Compute network CIDR and IP pool range
+    import ipaddress as _ipaddress
+    try:
+        network = _ipaddress.IPv4Network(f"{ipv4_addr}/{ipv4_prefix}", strict=False)
+        # IP pool: .100 to .199 within the detected subnet
+        base = int(network.network_address)
+        ip_start = str(_ipaddress.IPv4Address(base + 100))
+        ip_end = str(_ipaddress.IPv4Address(base + 199))
+        # Clamp to broadcast - 1
+        broadcast = int(network.broadcast_address)
+        if base + 199 >= broadcast:
+            ip_end = str(_ipaddress.IPv4Address(broadcast - 1))
+        if base + 100 >= broadcast:
+            ip_start = str(_ipaddress.IPv4Address(base + 2))
+
+        return {
+            "gateway": gateway,
+            "network_cidr": str(network),
+            "ip_start": ip_start,
+            "ip_end": ip_end,
+        }
+    except Exception:
+        return defaults
 
 
 # --- Finalization Functions ---
