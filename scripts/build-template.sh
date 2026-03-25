@@ -16,35 +16,26 @@ IMAGE_URL="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-gener
 IMAGE_NAME="debian-12-genericcloud-amd64.qcow2"
 TEMPLATE_NAME="debian-12-web3-template"
 
-# Path to libpam-web3 .deb package
-# Default: glob pattern for package in standard location
-if [[ -z "${LIBPAM_WEB3_DEB:-}" ]]; then
-    # Try to find the package in the standard location
-    LIBPAM_WEB3_DEB=$(ls /var/lib/blockhost/template-packages/libpam-web3_*.deb 2>/dev/null | head -1 || true)
-    # Fallback to development location if not found
-    if [[ -z "${LIBPAM_WEB3_DEB}" ]]; then
-        LIBPAM_WEB3_DEB="$HOME/projects/libpam-web3/packaging/libpam-web3_0.2.0_amd64.deb"
-    fi
-fi
+# Locate ALL template packages from standard directory
+TEMPLATE_DEBS=()
+for deb in /var/lib/blockhost/template-packages/*.deb; do
+    [ -f "$deb" ] || continue
+    TEMPLATE_DEBS+=("$deb")
+done
 
-# Extract just the filename for use in commands
-LIBPAM_WEB3_FILENAME=$(basename "${LIBPAM_WEB3_DEB}")
-
-# Path to blockhost-auth-svc .deb package (optional — template works without it)
-if [[ -z "${AUTH_SVC_DEB:-}" ]]; then
-    AUTH_SVC_DEB=$(ls /var/lib/blockhost/template-packages/blockhost-auth-svc_*.deb 2>/dev/null | head -1 || true)
-fi
-
-if [[ -n "${AUTH_SVC_DEB}" ]]; then
-    AUTH_SVC_FILENAME=$(basename "${AUTH_SVC_DEB}")
+if [ ${#TEMPLATE_DEBS[@]} -eq 0 ]; then
+    echo "Error: No template packages found in /var/lib/blockhost/template-packages/"
+    exit 1
 fi
 
 echo "=== Proxmox Template Builder ==="
 echo "Host: ${PROXMOX_HOST}"
 echo "Template VMID: ${TEMPLATE_VMID}"
 echo "Storage: ${STORAGE}"
-echo "libpam-web3: ${LIBPAM_WEB3_DEB}"
-echo "auth-svc: ${AUTH_SVC_DEB:-not found}"
+echo "Template packages:"
+for deb in "${TEMPLATE_DEBS[@]}"; do
+    echo "  $(basename "$deb")"
+done
 echo ""
 
 # Helper functions for local/remote execution
@@ -81,11 +72,6 @@ if ! command -v virt-customize &> /dev/null; then
     exit 1
 fi
 
-if [[ ! -f "${LIBPAM_WEB3_DEB}" ]]; then
-    echo "Error: libpam-web3 .deb not found at ${LIBPAM_WEB3_DEB}"
-    exit 1
-fi
-
 # Download image locally
 echo "Downloading ${IMAGE_NAME}..."
 wget -N -P /tmp "${IMAGE_URL}"
@@ -95,21 +81,40 @@ WORK_IMAGE="/tmp/${IMAGE_NAME%.qcow2}-customized.qcow2"
 echo "Creating working copy for customization..."
 cp "/tmp/${IMAGE_NAME}" "${WORK_IMAGE}"
 
-# Customize the image with libpam-web3 and qemu-guest-agent
+# Build virt-customize arguments dynamically
 # Note: sudo required on Ubuntu because /boot/vmlinuz-* is not world-readable
-echo "Installing qemu-guest-agent and libpam-web3 into image..."
-sudo virt-customize -a "${WORK_IMAGE}" \
-    --install qemu-guest-agent \
-    --run-command 'curl -fsSL https://deb.nodesource.com/setup_22.x | bash -' \
-    --install nodejs \
-    --copy-in "${LIBPAM_WEB3_DEB}":/tmp \
-    --run-command "dpkg -i /tmp/${LIBPAM_WEB3_FILENAME} || apt-get -f install -y" \
-    ${AUTH_SVC_DEB:+--copy-in "${AUTH_SVC_DEB}":/tmp} \
-    ${AUTH_SVC_DEB:+--run-command "dpkg -i /tmp/${AUTH_SVC_FILENAME} || apt-get -f install -y"} \
-    --run-command 'systemctl enable web3-auth-svc' \
-    --run-command 'systemctl enable qemu-guest-agent' \
-    --delete "/tmp/${LIBPAM_WEB3_FILENAME}" \
-    ${AUTH_SVC_DEB:+--delete "/tmp/${AUTH_SVC_FILENAME}"}
+echo "Installing packages into image..."
+CUSTOMIZE_ARGS=(
+    -a "${WORK_IMAGE}"
+    --install qemu-guest-agent
+    --run-command 'curl -fsSL https://deb.nodesource.com/setup_22.x | bash -'
+    --install nodejs
+)
+
+# Copy all template debs into the image
+for deb in "${TEMPLATE_DEBS[@]}"; do
+    CUSTOMIZE_ARGS+=(--copy-in "$deb":/tmp)
+done
+
+# Install all at once, then fix dependencies
+DEB_NAMES=""
+for deb in "${TEMPLATE_DEBS[@]}"; do
+    DEB_NAMES+="/tmp/$(basename "$deb") "
+done
+CUSTOMIZE_ARGS+=(--run-command "dpkg -i ${DEB_NAMES}|| apt-get install -f -y")
+
+# Enable services
+CUSTOMIZE_ARGS+=(
+    --run-command 'systemctl enable web3-auth-svc'
+    --run-command 'systemctl enable qemu-guest-agent'
+)
+
+# Clean up copied debs
+for deb in "${TEMPLATE_DEBS[@]}"; do
+    CUSTOMIZE_ARGS+=(--delete "/tmp/$(basename "$deb")")
+done
+
+sudo virt-customize "${CUSTOMIZE_ARGS[@]}"
 
 IMAGE_SIZE=$(du -h "${WORK_IMAGE}" | cut -f1)
 echo "Customized image size: ${IMAGE_SIZE}"

@@ -166,7 +166,7 @@ entry_points:
 
   build_template:
     script: scripts/build-template.sh
-    description: Build and deploy Debian 12 template with Node.js 22, libpam-web3, and blockhost-auth-svc to Proxmox
+    description: Build and deploy Debian 12 template with Node.js 22 and all template packages from /var/lib/blockhost/template-packages/
     environment_vars:
       - name: PROXMOX_HOST
         default: root@ix
@@ -177,17 +177,10 @@ entry_points:
       - name: STORAGE
         default: local-lvm
         description: Proxmox storage for VM disks
-      - name: LIBPAM_WEB3_DEB
-        default: ~/projects/libpam-web3/packaging/libpam-web3_0.2.0_amd64.deb
-        description: Path to libpam-web3 .deb package
-      - name: AUTH_SVC_DEB
-        default: auto-detected from /var/lib/blockhost/template-packages/
-        description: Path to blockhost-auth-svc .deb package (optional)
     prerequisites:
       - libguestfs-tools (virt-customize)
       - SSH access to Proxmox host
-      - libpam-web3 .deb package
-      - blockhost-auth-svc .deb package (optional)
+      - At least one .deb in /var/lib/blockhost/template-packages/
     example: |
       PROXMOX_HOST=root@pve ./scripts/build-template.sh
 
