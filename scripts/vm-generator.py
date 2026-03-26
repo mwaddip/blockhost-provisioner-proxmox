@@ -421,6 +421,7 @@ Examples:
         # Render cloud-init with variables
         variables = {
             "VM_NAME": args.name,
+            "VM_FQDN": signing_domain if signing_domain else f"{args.name}.local",
             "VM_IP": ip_address,
             "VM_IPV6": ipv6_address or "",
             "SIGNING_HOST": signing_host,
