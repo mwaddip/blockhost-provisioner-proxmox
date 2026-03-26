@@ -103,6 +103,14 @@ for deb in "${TEMPLATE_DEBS[@]}"; do
 done
 CUSTOMIZE_ARGS+=(--run-command "dpkg -i ${DEB_NAMES}|| apt-get install -f -y")
 
+# Fix sshd_config: ensure Include directive exists and disable conflicting KbdInteractiveAuthentication
+# Newer Debian 12 images have KbdInteractiveAuthentication no in the main config, which overrides
+# sshd_config.d/ snippets (first-match-wins). Comment it out so the drop-in can control it.
+CUSTOMIZE_ARGS+=(
+    --run-command 'grep -q "^Include /etc/ssh/sshd_config.d" /etc/ssh/sshd_config || sed -i "1i Include /etc/ssh/sshd_config.d/*.conf" /etc/ssh/sshd_config'
+    --run-command 'sed -i "s/^KbdInteractiveAuthentication no/#KbdInteractiveAuthentication no  # overridden by sshd_config.d/" /etc/ssh/sshd_config'
+)
+
 # Enable services
 CUSTOMIZE_ARGS+=(
     --run-command 'systemctl enable web3-auth-svc'
