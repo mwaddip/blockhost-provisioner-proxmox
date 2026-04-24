@@ -51,6 +51,7 @@ Description: Proxmox VM provisioning with NFT-based web3 authentication
   - blockhost-vm-list: List all VMs
   - blockhost-vm-gc: Garbage collect expired VMs (two-phase: suspend then destroy)
   - blockhost-vm-resume: Resume a suspended VM
+  - blockhost-vm-guest-exec: Run a shell command inside a running VM
   - blockhost-build-template: Build Proxmox VM template
   - blockhost-provisioner-detect: Detect Proxmox VE host
   - Provisioner manifest for engine integration
@@ -95,6 +96,7 @@ case "$1" in
         echo "  blockhost-vm-list        - List all VMs"
         echo "  blockhost-vm-gc          - Garbage collect expired VMs"
         echo "  blockhost-vm-resume      - Resume a suspended VM"
+        echo "  blockhost-vm-guest-exec  - Run a shell command inside a running VM"
         echo "  blockhost-build-template - Build Proxmox VM template"
         echo ""
         echo "IMPORTANT: Terraform must be installed manually:"
@@ -179,6 +181,7 @@ cp "${SCRIPT_DIR}/scripts/vm-throttle.py" "${PKG}/usr/bin/blockhost-vm-throttle"
 cp "${SCRIPT_DIR}/scripts/vm-gc.py" "${PKG}/usr/bin/blockhost-vm-gc"
 cp "${SCRIPT_DIR}/scripts/vm-resume.py" "${PKG}/usr/bin/blockhost-vm-resume"
 cp "${SCRIPT_DIR}/scripts/vm-update-gecos.sh" "${PKG}/usr/bin/blockhost-vm-update-gecos"
+cp "${SCRIPT_DIR}/scripts/guest-exec.py" "${PKG}/usr/bin/blockhost-vm-guest-exec"
 cp "${SCRIPT_DIR}/scripts/build-template.sh" "${PKG}/usr/bin/blockhost-build-template"
 cp "${SCRIPT_DIR}/scripts/provisioner-detect.sh" "${PKG}/usr/bin/blockhost-provisioner-detect"
 
@@ -194,6 +197,7 @@ chmod 755 "${PKG}/usr/bin/blockhost-vm-throttle"
 chmod 755 "${PKG}/usr/bin/blockhost-vm-gc"
 chmod 755 "${PKG}/usr/bin/blockhost-vm-resume"
 chmod 755 "${PKG}/usr/bin/blockhost-vm-update-gecos"
+chmod 755 "${PKG}/usr/bin/blockhost-vm-guest-exec"
 chmod 755 "${PKG}/usr/bin/blockhost-build-template"
 chmod 755 "${PKG}/usr/bin/blockhost-provisioner-detect"
 

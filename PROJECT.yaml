@@ -1,6 +1,6 @@
 # Blockhost Provisioner Project Manifest
 # Machine-readable overview for integration and automation
-# Last updated: 2026-03-16 (implement vm-metrics and vm-throttle commands)
+# Last updated: 2026-04-25 (add guest-exec CLI and qm-guest-exec root agent action)
 
 name: blockhost-provisioner-proxmox
 version: "0.2.0"
@@ -301,7 +301,10 @@ entry_points:
 
   update_gecos:
     script: scripts/vm-update-gecos.sh
-    description: Update a VM user's GECOS field after NFT ownership transfer
+    description: |
+      Update a VM user's GECOS field after NFT ownership transfer.
+      Validates wallet/username, composes a shell-quoted usermod command,
+      and delegates execution to blockhost-vm-guest-exec.
     required_args:
       - name: vm_name
         position: 1
@@ -318,6 +321,29 @@ entry_points:
         description: Linux username to update (default admin)
     example: |
       blockhost-vm-update-gecos myvm bc1q... --nft-id 42
+
+  guest_exec:
+    script: scripts/guest-exec.py
+    description: |
+      Execute a shell command inside a running VM via qm guest exec.
+      General-purpose primitive used by the network hook (.onion push,
+      signing URL updates), the engine handler (GECOS updates), and the
+      admin panel. Forwards the inner command's stdout, stderr, and exit code.
+    required_args:
+      - name: vm_name
+        position: 1
+        description: Name of the VM to exec in
+      - name: command
+        position: "2..."
+        description: Shell command (all remaining args joined with spaces)
+    behavior: |
+      Resolves VM name → VMID via the database, then delegates to the
+      qm-guest-exec root agent action, which runs
+      `qm guest exec <vmid> -- /bin/sh -c <command>` on the Proxmox host
+      and returns the inner command's exitcode, out-data, err-data.
+    example: |
+      blockhost-vm-guest-exec myvm "cat /etc/hostname"
+      blockhost-vm-guest-exec myvm "echo hello"
 
 # Provisioner manifest (engine integration)
 provisioner_manifest:
@@ -341,6 +367,7 @@ provisioner_manifest:
     gc: blockhost-vm-gc
     resume: blockhost-vm-resume
     update-gecos: blockhost-vm-update-gecos
+    guest-exec: blockhost-vm-guest-exec
   setup:
     detect: blockhost-provisioner-detect
     wizard_module: blockhost.provisioner_proxmox.wizard
@@ -385,6 +412,7 @@ root_agent_actions:
     qm-set: Set VM configuration with allowlisted keys
     qm-template: Convert a VM to a template
     qm-update-gecos: Update a VM user's GECOS field via qm guest exec
+    qm-guest-exec: Generic primitive — run a shell command in a VM via qm guest exec + /bin/sh -c; returns exitcode, stdout, stderr
     pve-set-throttle: Apply CPU/IOPS limits via qm set (dedicated throttle allowlist)
     tc-rate-limit: Apply/remove bandwidth limits via tc on VM tap interfaces
   security:
@@ -394,6 +422,7 @@ root_agent_actions:
     - qm-importdisk image paths restricted to /var/lib/blockhost/ and /tmp/
     - qm-importdisk storage names validated against STORAGE_RE regex
     - qm-update-gecos username validated against USERNAME_RE, gecos against GECOS_RE (wallet=ADDR or wallet=ADDR,nft=ID)
+    - qm-guest-exec command must be non-empty string; callers are responsible for composing safe commands (blockhost user is trusted to exec in VMs it manages)
     - pve-set-throttle keys restricted to THROTTLE_ALLOWED_KEYS, delete keys to THROTTLE_DELETABLE_KEYS
     - tc-rate-limit dev validated against TAP_RE (tap{N}i{N}), rate_kbps must be positive int
 
@@ -499,6 +528,7 @@ privilege_separation:
     - qm_set: Set VM configuration (allowlisted keys)
     - qm_template: Convert a VM to a template
     - qm_update_gecos: Update VM user GECOS field
+    - qm_guest_exec: Run a shell command inside a running VM via qm guest exec
     - ip6_route_add: Add IPv6 host route (shipped by blockhost-common)
     - ip6_route_del: Remove IPv6 host route (shipped by blockhost-common)
     - bridge_port_isolate: Set bridge port isolation on tap interface (shipped by blockhost-common)

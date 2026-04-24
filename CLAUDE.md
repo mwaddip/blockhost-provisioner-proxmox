@@ -73,6 +73,9 @@ blockhost-vm-list [--format json]
 # Update VM GECOS after ownership transfer
 blockhost-vm-update-gecos <name> <wallet-address> --nft-id <id>
 
+# Run a shell command inside a running VM (via qm guest exec)
+blockhost-vm-guest-exec <name> <command...>
+
 # Garbage collect expired VMs
 python3 scripts/vm-gc.py [--execute] [--grace-days N]
 
@@ -117,7 +120,8 @@ If yes to any, update `PROJECT.yaml` accordingly.
 | `scripts/vm-resume.py` | Resume a suspended VM |
 | `scripts/vm-metrics.py` | Collect VM resource usage via Proxmox API |
 | `scripts/vm-throttle.py` | Apply/remove VM resource limits |
-| `scripts/vm-update-gecos.sh` | Update VM GECOS after ownership transfer |
+| `scripts/vm-update-gecos.sh` | Update VM GECOS after ownership transfer (delegates to guest-exec) |
+| `scripts/guest-exec.py` | Run a shell command inside a running VM (via qm guest exec) |
 | `scripts/build-template.sh` | Proxmox template builder |
 | `scripts/provisioner-detect.sh` | Detect Proxmox VE host |
 | `blockhost/provisioner_proxmox/wizard.py` | Wizard plugin (Blueprint, finalization, summary) |

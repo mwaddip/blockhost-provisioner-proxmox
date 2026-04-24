@@ -17,7 +17,8 @@
     "build-template": "blockhost-build-template",
     "gc":             "blockhost-vm-gc",
     "resume":         "blockhost-vm-resume",
-    "update-gecos":   "blockhost-vm-update-gecos"
+    "update-gecos":   "blockhost-vm-update-gecos",
+    "guest-exec":     "blockhost-vm-guest-exec"
   },
 
   "setup": {

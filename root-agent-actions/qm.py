@@ -5,6 +5,7 @@ Shipped by blockhost-provisioner, loaded by the root agent daemon from
 /usr/share/blockhost/root-agent-actions/.
 """
 
+import json
 import os
 import re
 
@@ -172,6 +173,49 @@ def handle_qm_update_gecos(params):
     return {'ok': True, 'output': out}
 
 
+def handle_qm_guest_exec(params):
+    """Execute a shell command inside a running VM via qm guest exec.
+
+    Generic primitive used by the network hook (onion addresses, signing URL
+    updates) and by update-gecos. The command runs through /bin/sh -c so
+    shell features (pipes, redirects, quoting) work as expected.
+
+    params:
+        vmid (int): VM ID
+        command (str): Shell command to execute inside the VM
+
+    Returns on outer success (qm guest exec itself ran):
+        {ok: True, exitcode: int, stdout: str, stderr: str}
+    Returns on outer failure (agent unresponsive, VM not found, parse error):
+        {ok: False, error: str}
+    """
+    vmid = validate_vmid(params['vmid'])
+    command = params.get('command', '')
+
+    if not isinstance(command, str) or not command:
+        return {'ok': False, 'error': 'command must be a non-empty string'}
+
+    rc, out, err = run(
+        ['qm', 'guest', 'exec', str(vmid), '--', '/bin/sh', '-c', command],
+        timeout=300,
+    )
+
+    if rc != 0:
+        return {'ok': False, 'error': (err or out or f'qm guest exec failed with rc={rc}').strip()}
+
+    try:
+        data = json.loads(out)
+    except (ValueError, json.JSONDecodeError) as e:
+        return {'ok': False, 'error': f'Failed to parse qm guest exec JSON output: {e}'}
+
+    return {
+        'ok': True,
+        'exitcode': int(data.get('exitcode', 0)),
+        'stdout': data.get('out-data', '') or '',
+        'stderr': data.get('err-data', '') or '',
+    }
+
+
 def handle_pve_set_throttle(params):
     """Apply CPU and IOPS throttle limits via qm set.
 
@@ -319,6 +363,7 @@ ACTIONS = {
     'qm-set': handle_qm_set,
     'qm-template': lambda p: _handle_qm_simple(p, 'template'),
     'qm-update-gecos': handle_qm_update_gecos,
+    'qm-guest-exec': handle_qm_guest_exec,
     'pve-set-throttle': handle_pve_set_throttle,
     'tc-rate-limit': handle_tc_rate_limit,
 }
