@@ -553,6 +553,12 @@ vm_lifecycle:
 workflow:
   vm_creation:
     steps:
+      - 0: |
+          Acquire the cross-provisioner lock at /run/blockhost/provisioning.lock
+          (write our PID; abort if a live PID already holds it; clear stale locks).
+          Skipped in --mock mode. Released via atexit + SIGINT/SIGTERM handlers.
+          Engines (e.g. blockhost-engine-opnet) read this file's presence to defer
+          reconciliation while a create is in flight.
       - 1: Allocate VMID, IPv4 and IPv6 (db.allocate_vmid, db.allocate_ip, db.allocate_ipv6)
       - 2: Compute IPv6 gateway from broker prefix (first host address, offset +1)
       - 3: Load Proxmox settings from terraform.tfvars (node, datastores)

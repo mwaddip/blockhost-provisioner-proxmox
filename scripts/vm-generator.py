@@ -35,10 +35,13 @@ Usage:
 """
 
 import argparse
+import atexit
 import ipaddress
 import json
+import os
 import re
 import secrets
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -56,6 +59,69 @@ from blockhost.provisioner_proxmox import (
 )
 from blockhost.root_agent import RootAgentError, call, ip6_route_add
 from blockhost.vm_db import get_database
+
+
+# Cross-provisioner lock so engine reconcilers can detect in-flight create
+# operations and defer reconciliation. Path matches the libvirt provisioner.
+# /run/blockhost is created (root:blockhost, mode 2775) by the engine's
+# systemd unit's ExecStartPre — provisioner runs as `blockhost` and writes here.
+PROVISIONING_LOCK = Path("/run/blockhost/provisioning.lock")
+
+
+def _read_lock_pid() -> int | None:
+    """Read the PID inside the lock file, or None if missing/malformed."""
+    try:
+        return int(PROVISIONING_LOCK.read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def _pid_alive(pid: int) -> bool:
+    """Return True if `pid` is alive (any user)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # Process exists, owned by another user.
+    return True
+
+
+def _acquire_provisioning_lock() -> None:
+    """Take the provisioning lock; abort on live concurrent create.
+
+    Stale-lock handling: if the recorded PID is dead, remove and proceed.
+    On any race, the engine reconciler will simply defer one more cycle.
+    """
+    PROVISIONING_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    existing_pid = _read_lock_pid()
+    if existing_pid is not None and _pid_alive(existing_pid):
+        print(
+            f"Error: another provisioning operation is in progress "
+            f"(pid {existing_pid}, lock at {PROVISIONING_LOCK})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if existing_pid is not None:
+        print(
+            f"Warning: removing stale provisioning lock from pid {existing_pid}",
+            file=sys.stderr,
+        )
+    PROVISIONING_LOCK.write_text(str(os.getpid()))
+
+
+def _release_provisioning_lock() -> None:
+    """Release the lock iff we own it. Best-effort; never raises."""
+    try:
+        if _read_lock_pid() == os.getpid():
+            PROVISIONING_LOCK.unlink()
+    except OSError:
+        pass
+
+
+def _on_signal(signum, frame):
+    """Exit cleanly on SIGINT/SIGTERM so atexit handlers run."""
+    sys.exit(128 + signum)
 
 
 def load_ssh_keys() -> list[str]:
@@ -310,6 +376,14 @@ Examples:
         parser.error("--owner-wallet is required (or use --no-web3 to disable NFT auth)")
 
     nft_token_id = args.nft_token_id
+
+    # Acquire the provisioning lock so engine reconcilers defer their work
+    # until this create completes. Skip in mock mode (no shared DB to race on).
+    if not args.mock:
+        _acquire_provisioning_lock()
+        atexit.register(_release_provisioning_lock)
+        signal.signal(signal.SIGTERM, _on_signal)
+        signal.signal(signal.SIGINT, _on_signal)
 
     # Initialize database
     db = get_database(use_mock=args.mock)
