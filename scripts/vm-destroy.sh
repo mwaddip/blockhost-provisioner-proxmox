@@ -59,6 +59,13 @@ if ipv6:
     except RootAgentError:
         pass  # Route may already be gone
 
-db.mark_destroyed(vm_name)
+# mark_destroyed pairs with register_vm in vm-create. Provisioner-owned per
+# facts/PROVISIONER_INTERFACE.md §2 (engines no longer call this). The early
+# exits above cover the common idempotent cases; the try/except guards
+# against a race where the record is mutated between get_vm and now.
+try:
+    db.mark_destroyed(vm_name)
+except ValueError as e:
+    print(f"mark_destroyed: {e} — treating as idempotent", file=sys.stderr)
 print(f"VM {vm_name} destroyed")
 PYEOF

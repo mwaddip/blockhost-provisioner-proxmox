@@ -1,6 +1,6 @@
 # Blockhost Provisioner Project Manifest
 # Machine-readable overview for integration and automation
-# Last updated: 2026-04-25 (add guest-exec CLI and qm-guest-exec root agent action)
+# Last updated: 2026-04-28 (provisioner-owned register_vm/mark_destroyed + BLOCKHOST_RESULT sentinel)
 
 name: blockhost-provisioner-proxmox
 version: "0.2.0"
@@ -77,10 +77,13 @@ entry_points:
       - Allocated VMID
       - Allocated IPv4 address
       - Allocated IPv6 address (if broker pool configured)
-      - JSON summary as last stdout line (when --apply succeeds)
+      - VM record written to vms.json (db.register_vm)
+      - Sentinel-prefixed JSON summary on stdout (when --apply succeeds)
     json_output:
       description: |
-        On successful --apply, the last line of stdout is a JSON object for engine consumption.
+        On successful --apply, the result line is emitted on stdout with the form
+        `BLOCKHOST_RESULT: <json>` (note the trailing space). Engines parse by
+        sentinel prefix; other stdout content is informational.
         Format: {"status":"ok","vm_name":"...","ip":"...","ipv6":"...","vmid":N,"nft_token_id":N,"username":"..."}
         Fields ipv6 and nft_token_id may be null.
     example: |
@@ -186,7 +189,10 @@ entry_points:
 
   destroy_vm:
     script: scripts/vm-destroy.sh
-    description: Destroy a VM — removes terraform config, applies, cleans up IPv6 route
+    description: |
+      Destroy a VM — runs terraform destroy, removes config, cleans up IPv6 route,
+      and calls db.mark_destroyed (provisioner-owned per the contract). Idempotent:
+      missing/already-destroyed records are a no-op success.
     required_args:
       - name: vm_name
         position: 1
@@ -573,21 +579,29 @@ workflow:
       - 5: |
           Generate .tf.json config (with dual-stack IPv4/IPv6, datastore_id, ipv6_gateway).
           IPv4 prefix length is derived from db_config["ip_pool"]["network"].
-      - 6: Register VM in DB (db.register_vm)
-      - 7: |
+      - 6: |
           Run terraform init + apply (if --apply). On failure, roll back via
           `terraform destroy -target=...`, remove .tf.json + cloud-config,
-          and db.mark_destroyed (releases IPs, leaves tombstone record).
+          and release IPv4/IPv6 allocations directly (no DB record exists yet).
+      - 7: |
+          Register VM in DB (db.register_vm) — provisioner-owned per
+          facts/PROVISIONER_INTERFACE.md §2. Engines no longer call this.
+          Includes username so libpam-web3 can resolve the GECOS owner.
+          On failure (e.g. duplicate-name race), runs the same rollback as
+          step 6 and exits non-zero so we never leave an orphan VM in Proxmox.
       - 8: |
           Add IPv6 host route via root agent (ip6_route_add <ipv6>/128 <bridge>)
           where bridge is read from db_config["bridge"].
       - 9: Enable bridge port isolation on tap interface (non-fatal, warns on failure)
-      - 10: Print JSON summary as last stdout line
+      - 10: |
+          Print result line `BLOCKHOST_RESULT: <json>` on stdout. Exactly one such
+          sentinel line on success; engines parse by prefix (other stdout is informational).
     on_failure:
       - |
-        terraform init/apply failure triggers rollback (see step 7). VM record marked
-        destroyed, IPs released, .tf.json/cloud-config files removed, terraform state
-        cleaned via -target destroy.
+        terraform init/apply or register_vm failure triggers a single rollback
+        (see steps 6, 7): `terraform destroy -target=...`, .tf.json + cloud-config
+        files removed, IPv4/IPv6 allocations released directly via release_ip /
+        release_ipv6 (MockVMDatabase doesn't expose these — guarded by hasattr).
     blockhost_common_requirements: |
       The provisioner requires these blockhost-common features:
       - register_vm(..., ipv6=None): Store IPv6 address in VM record

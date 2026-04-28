@@ -8,8 +8,9 @@ web3 authentication.
 Workflow (with --apply):
 1. Allocate resources (VMID, IPv4, IPv6)
 2. Generate Terraform config with cloud-init
-3. Apply Terraform to create VM
-4. Print JSON summary as last line
+3. Apply Terraform to create the VM
+4. Register the VM in the DB (blockhost.vm_db.register_vm)
+5. Print `BLOCKHOST_RESULT: <json>` sentinel line on stdout
 
 The engine owns the NFT lifecycle. At creation time, --nft-token-id is
 optional — the VM is created with GECOS wallet=ADDRESS. After minting,
@@ -255,7 +256,8 @@ def run_terraform(action: str = "plan", target: str = None) -> int:
     """Run terraform command in terraform_dir.
 
     Output is captured and forwarded to stderr so this script's stdout stays
-    reserved for the JSON summary that the engine consumes as the last line.
+    clean for human readers; engines parse the `BLOCKHOST_RESULT:` sentinel
+    line on stdout regardless of other content.
     """
     tf_dir = get_terraform_dir()
     cmd = ["terraform", action]
@@ -544,28 +546,19 @@ Examples:
     tf_file = write_tf_file(args.name, tf_config)
     print(f"Generated: {tf_file}")
 
-    # Register VM in database
-    vm = db.register_vm(
-        name=args.name,
-        vmid=vmid,
-        ip=ip_address,
-        ipv6=ipv6_address,
-        owner=args.owner,
-        expiry_days=args.expiry_days,
-        purpose=args.purpose,
-        wallet_address=args.owner_wallet if web3_enabled else None,
-    )
-    print(f"Registered VM '{args.name}' - expires {vm['expires_at']}")
-    if nft_token_id is not None:
-        print(f"  NFT token ID: {nft_token_id}")
-
     # Apply if requested
     if args.apply:
         resource_name = sanitize_resource_name(args.name)
         target = f"proxmox_virtual_environment_vm.{resource_name}"
 
         def _rollback(reason: str):
-            """Best-effort cleanup when terraform init/apply fails after register_vm."""
+            """Cleanup when terraform apply or register_vm fails.
+
+            No DB record exists at any rollback point (register_vm runs only
+            after terraform apply succeeds), so we release allocations
+            directly via release_ip / release_ipv6 instead of going through
+            mark_destroyed.
+            """
             print(f"\nRolling back: {reason}", file=sys.stderr)
             try:
                 subprocess.run(
@@ -581,10 +574,17 @@ Examples:
                         f.unlink()
                 except OSError as e:
                     print(f"  rollback: unlink {f}: {e}", file=sys.stderr)
-            try:
-                db.mark_destroyed(args.name)
-            except Exception as e:
-                print(f"  rollback: mark_destroyed: {e}", file=sys.stderr)
+            # MockVMDatabase doesn't expose release_ip/release_ipv6; guard with hasattr.
+            if not args.ip and hasattr(db, "release_ip"):
+                try:
+                    db.release_ip(ip_address)
+                except Exception as e:
+                    print(f"  rollback: release_ip: {e}", file=sys.stderr)
+            if not args.ipv6 and ipv6_address and hasattr(db, "release_ipv6"):
+                try:
+                    db.release_ipv6(ipv6_address)
+                except Exception as e:
+                    print(f"  rollback: release_ipv6: {e}", file=sys.stderr)
 
         print("\nInitializing Terraform...")
         if run_terraform("init") != 0:
@@ -597,6 +597,29 @@ Examples:
         if apply_result != 0:
             _rollback("terraform apply failed")
             sys.exit(1)
+
+        # VM is up in Proxmox; record it in the DB before announcing success.
+        # Provisioner-owned per facts/PROVISIONER_INTERFACE.md §2 (engines no
+        # longer call register_vm). Duplicate-name races destroy the partial
+        # VM and exit non-zero so we never leave an orphan.
+        try:
+            vm = db.register_vm(
+                name=args.name,
+                vmid=vmid,
+                ip=ip_address,
+                ipv6=ipv6_address,
+                owner=args.owner,
+                expiry_days=args.expiry_days,
+                purpose=args.purpose,
+                wallet_address=args.owner_wallet if web3_enabled else None,
+                username=args.username,
+            )
+        except Exception as e:
+            _rollback(f"register_vm failed: {e}")
+            sys.exit(1)
+        print(f"Registered VM '{args.name}' - expires {vm['expires_at']}")
+        if nft_token_id is not None:
+            print(f"  NFT token ID: {nft_token_id}")
 
         print(f"\nVM '{args.name}' created successfully!")
         print(f"  IPv4: {ip_address}")
@@ -623,7 +646,7 @@ Examples:
         except RootAgentError as e:
             print(f"  Warning: bridge port isolation failed on {tap_dev}: {e}")
 
-        # Print JSON summary for engine consumption (must be last line on stdout)
+        # Sentinel-prefixed JSON summary; engines parse by `BLOCKHOST_RESULT: ` prefix.
         summary = {
             "status": "ok",
             "vm_name": args.name,
@@ -633,7 +656,7 @@ Examples:
             "nft_token_id": nft_token_id,
             "username": args.username,
         }
-        print(json.dumps(summary))
+        print(f"BLOCKHOST_RESULT: {json.dumps(summary)}")
     else:
         print("\nTo apply this configuration:")
         print(f"  cd {get_terraform_dir()}")
