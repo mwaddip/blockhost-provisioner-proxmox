@@ -400,28 +400,20 @@ root_agent_actions:
   install_path: /usr/share/blockhost/root-agent-actions/qm.py
   description: |
     Proxmox QM actions for the root agent daemon. Loaded as a plugin module
-    at daemon startup. Provides privileged VM operations (create, start, stop,
-    destroy, set config, import disk, convert to template).
+    at daemon startup. Provides privileged VM lifecycle operations (start,
+    stop, destroy), guest exec, and resource throttling. VM template build
+    runs `qm` directly from build-template.sh and does not dispatch through
+    these actions.
   actions:
     qm-start: Start a VM (qm start <vmid>)
     qm-stop: Force-stop a VM (qm stop <vmid>)
     qm-shutdown: Gracefully shut down a VM (qm shutdown <vmid>)
     qm-destroy: Destroy a VM and purge disk (qm destroy <vmid> --purge)
-    qm-create: Create a VM with validated arguments
-    qm-importdisk: Import a disk image into a VM
-    qm-set: Set VM configuration with allowlisted keys
-    qm-template: Convert a VM to a template
-    qm-update-gecos: Update a VM user's GECOS field via qm guest exec
     qm-guest-exec: Generic primitive — run a shell command in a VM via qm guest exec + /bin/sh -c; returns exitcode, stdout, stderr
     pve-set-throttle: Apply CPU/IOPS limits via qm set (dedicated throttle allowlist)
     tc-rate-limit: Apply/remove bandwidth limits via tc on VM tap interfaces
   security:
     - All vmids validated against VMID_MIN/VMID_MAX range
-    - qm-create args restricted to QM_CREATE_ALLOWED_ARGS allowlist
-    - qm-set keys restricted to QM_SET_ALLOWED_KEYS allowlist
-    - qm-importdisk image paths restricted to /var/lib/blockhost/ and /tmp/
-    - qm-importdisk storage names validated against STORAGE_RE regex
-    - qm-update-gecos username validated against USERNAME_RE, gecos against GECOS_RE (wallet=ADDR or wallet=ADDR,nft=ID)
     - qm-guest-exec command must be non-empty string; callers are responsible for composing safe commands (blockhost user is trusted to exec in VMs it manages)
     - pve-set-throttle keys restricted to THROTTLE_ALLOWED_KEYS, delete keys to THROTTLE_DELETABLE_KEYS
     - tc-rate-limit dev validated against TAP_RE (tap{N}i{N}), rate_kbps must be positive int
@@ -572,13 +564,24 @@ workflow:
           WALLET_ADDRESS comes from --owner-wallet (passed by engine).
           SIGNING_DOMAIN is the broker DNS FQDN ({hex_offset}.{dns_zone}) when dns_zone is present,
           empty string otherwise. SIGNING_HOST is SIGNING_DOMAIN when available, else [IPv6] or IPv4.
-      - 5: Generate .tf.json config (with dual-stack IPv4/IPv6, datastore_id, ipv6_gateway)
-      - 6: Run terraform apply (if --apply)
-      - 7: Add IPv6 host route via root agent (ip6_route_add <ipv6>/128 vmbr0)
-      - 8: Enable bridge port isolation on tap interface (non-fatal, warns on failure)
-      - 9: Print JSON summary as last stdout line
+      - 5: |
+          Generate .tf.json config (with dual-stack IPv4/IPv6, datastore_id, ipv6_gateway).
+          IPv4 prefix length is derived from db_config["ip_pool"]["network"].
+      - 6: Register VM in DB (db.register_vm)
+      - 7: |
+          Run terraform init + apply (if --apply). On failure, roll back via
+          `terraform destroy -target=...`, remove .tf.json + cloud-config,
+          and db.mark_destroyed (releases IPs, leaves tombstone record).
+      - 8: |
+          Add IPv6 host route via root agent (ip6_route_add <ipv6>/128 <bridge>)
+          where bridge is read from db_config["bridge"].
+      - 9: Enable bridge port isolation on tap interface (non-fatal, warns on failure)
+      - 10: Print JSON summary as last stdout line
     on_failure:
-      - VM not created, resources released
+      - |
+        terraform init/apply failure triggers rollback (see step 7). VM record marked
+        destroyed, IPs released, .tf.json/cloud-config files removed, terraform state
+        cleaned via -target destroy.
     blockhost_common_requirements: |
       The provisioner requires these blockhost-common features:
       - register_vm(..., ipv6=None): Store IPv6 address in VM record
@@ -593,11 +596,13 @@ workflow:
         derived as SIGNING_DOMAIN and used as SIGNING_HOST for the cloud-init template.
       gateway: |
         IPv6 gateway is computed as the first host address in the /120 prefix (offset +1).
-        This is where the Proxmox host has its address on vmbr0.
+        This is where the Proxmox host has its address on the bridge.
       routing: |
-        After VM creation, a /128 host route is added via root agent (ip6_route_add)
-        to direct inbound traffic via vmbr0. This route is removed when the VM is
-        destroyed via vm-gc.py (ip6_route_del).
+        The /128 host route lives only in the host kernel routing table (not persisted
+        to /etc/network/interfaces). To survive host reboots, vm-start and vm-resume
+        re-add the route after qm_start. ip6_route_add uses `ip -6 route replace` so
+        it is idempotent. The route is removed by vm-destroy and vm-gc Phase 2.
+        Bridge name comes from db_config["bridge"].
       bridge_port_isolation: |
         After every VM start (creation, manual start, resume), bridge port isolation
         is enabled on the tap interface (tap{vmid}i0) via the root agent's

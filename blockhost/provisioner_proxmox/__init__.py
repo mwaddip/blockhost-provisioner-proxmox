@@ -20,6 +20,26 @@ def sanitize_resource_name(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_]", "_", name)
 
 
+def load_tfvars(path: Path) -> dict:
+    """Parse a terraform.tfvars file as `key = "value"` pairs.
+
+    Returns an empty dict if the file does not exist. Strips matched surrounding
+    double quotes from values; does not handle escapes or HCL expressions.
+    """
+    if not path.exists():
+        return {}
+
+    variables = {}
+    for line in path.read_text().split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, _, value = line.partition("=")
+            variables[key.strip()] = value.strip().strip('"')
+    return variables
+
+
 def load_pve_credentials() -> tuple[str, str, str]:
     """Load Proxmox API credentials.
 
@@ -30,24 +50,13 @@ def load_pve_credentials() -> tuple[str, str, str]:
     node_name is read from terraform.tfvars (proxmox_node key),
     falling back to the system hostname.
     """
-    from pathlib import Path
-
     token_file = Path("/etc/blockhost/pve-token")
     if not token_file.exists():
         raise FileNotFoundError(f"PVE token not found: {token_file}")
     api_token = token_file.read_text().strip()
 
-    # Read node name from terraform.tfvars
-    node_name = socket.gethostname()
-    tf_dir = get_terraform_dir()
-    tfvars_file = tf_dir / "terraform.tfvars"
-    if tfvars_file.exists():
-        for line in tfvars_file.read_text().split("\n"):
-            line = line.strip()
-            if line.startswith("proxmox_node"):
-                _, _, value = line.partition("=")
-                node_name = value.strip().strip('"')
-                break
+    tfvars = load_tfvars(get_terraform_dir() / "terraform.tfvars")
+    node_name = tfvars.get("proxmox_node") or socket.gethostname()
 
     return ("https://127.0.0.1:8006", api_token, node_name)
 

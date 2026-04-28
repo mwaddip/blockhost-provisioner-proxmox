@@ -12,7 +12,6 @@
 
     <form id="proxmox-form" method="POST" action="{{ url_for('provisioner_proxmox.wizard_proxmox') }}">
         <!-- Auto-detected values (hidden inputs) -->
-        <input type="hidden" name="pve_api_url" value="https://127.0.0.1:8006">
         <input type="hidden" name="pve_user" value="root@pam">
         <input type="hidden" name="pve_node" value="{{ detected.node_name or 'pve' }}">
         <input type="hidden" name="template_vmid" value="9001">

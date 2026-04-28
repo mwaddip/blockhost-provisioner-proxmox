@@ -243,6 +243,8 @@ def phase_destroy(db, grace_days: int, execute: bool, verbose: bool) -> tuple[in
         print("No VMs to destroy.")
         return 0, 0
 
+    bridge = load_db_config().get("bridge", "vmbr0")
+
     print(f"Found {len(vms_to_destroy)} VM(s) to destroy:\n")
 
     success_count = 0
@@ -292,7 +294,7 @@ def phase_destroy(db, grace_days: int, execute: bool, verbose: bool) -> tuple[in
                         # Remove IPv6 host route if VM had an IPv6 address
                         if vm.get("ipv6_address"):
                             try:
-                                ip6_route_del(f"{vm['ipv6_address']}/128", "vmbr0")
+                                ip6_route_del(f"{vm['ipv6_address']}/128", bridge)
                                 print(f"    Removed IPv6 host route: {vm['ipv6_address']}/128")
                             except RootAgentError:
                                 pass  # Silently ignore if route doesn't exist

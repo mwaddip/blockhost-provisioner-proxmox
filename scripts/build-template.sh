@@ -96,12 +96,13 @@ for deb in "${TEMPLATE_DEBS[@]}"; do
     CUSTOMIZE_ARGS+=(--copy-in "$deb":/tmp)
 done
 
-# Install all at once, then fix dependencies
-DEB_NAMES=""
+# Install all at once, then fix dependencies. Build a path list as an array so
+# the dpkg invocation doesn't depend on a load-bearing trailing space.
+DEB_PATHS=()
 for deb in "${TEMPLATE_DEBS[@]}"; do
-    DEB_NAMES+="/tmp/$(basename "$deb") "
+    DEB_PATHS+=("/tmp/$(basename "$deb")")
 done
-CUSTOMIZE_ARGS+=(--run-command "dpkg -i ${DEB_NAMES}|| apt-get install -f -y")
+CUSTOMIZE_ARGS+=(--run-command "dpkg -i ${DEB_PATHS[*]} || apt-get install -f -y")
 
 # Fix sshd_config: ensure Include directive exists and disable conflicting KbdInteractiveAuthentication
 # Newer Debian 12 images have KbdInteractiveAuthentication no in the main config, which overrides

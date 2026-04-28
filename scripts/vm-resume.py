@@ -21,10 +21,12 @@ The script:
 import argparse
 import re
 import sys
+import urllib.error
 from datetime import datetime, timedelta, timezone
 
 from blockhost.config import load_db_config
-from blockhost.root_agent import RootAgentError, call, qm_start
+from blockhost.provisioner_proxmox import load_pve_credentials, pve_api_get
+from blockhost.root_agent import RootAgentError, call, ip6_route_add, qm_start
 from blockhost.vm_db import get_database
 
 
@@ -125,6 +127,37 @@ Examples:
         print(f"  - Set expiry to {new_expiry.isoformat()}")
         return 0
 
+    # Verify the VM still exists in Proxmox before starting. Catches the case
+    # where Phase 2 destroy ran partially (DB still has it but qm config is gone)
+    # or someone ran `qm destroy` directly. Without this, qm_start would fail
+    # with a confusing error.
+    try:
+        credentials = load_pve_credentials()
+    except FileNotFoundError:
+        credentials = None  # Mock or unconfigured environment — skip the check.
+
+    if credentials is not None:
+        _, _, node = credentials
+        try:
+            pve_api_get(
+                f"/api2/json/nodes/{node}/qemu/{vmid}/status/current",
+                credentials=credentials,
+            )
+        except urllib.error.HTTPError as e:
+            # Proxmox returns 500 with "Configuration file ... does not exist"
+            # for a missing VM; 404 is also possible.
+            if e.code in (404, 500):
+                print(
+                    f"Error: VM '{args.vm_name}' (VMID {vmid}) is not present in Proxmox.",
+                    file=sys.stderr,
+                )
+                print("Marking as destroyed in DB to reconcile state.", file=sys.stderr)
+                db.mark_destroyed(args.vm_name)
+                return 1
+            print(f"  Warning: could not verify VM in Proxmox (HTTP {e.code}): {e}")
+        except Exception as e:
+            print(f"  Warning: could not verify VM in Proxmox: {e}")
+
     # Start the VM
     print("\nStarting VM...")
     success, message = start_vm(vmid)
@@ -134,6 +167,16 @@ Examples:
         return 1
 
     print(f"  {message}")
+
+    # Re-add IPv6 host route. The kernel routing table doesn't survive host reboots,
+    # so we re-add on every start. ip6_route_add uses `ip -6 route replace` (idempotent).
+    ipv6 = vm.get("ipv6_address")
+    if ipv6:
+        bridge = db_config.get("bridge", "vmbr0")
+        try:
+            ip6_route_add(f"{ipv6}/128", bridge)
+        except RootAgentError as e:
+            print(f"  Warning: IPv6 route add failed: {e}")
 
     # Enable bridge port isolation so VMs cannot see each other's L2 traffic
     tap_dev = f"tap{vmid}i0"

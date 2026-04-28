@@ -8,16 +8,31 @@ Provides:
 """
 
 import grp
+import ipaddress
 import json
 import os
 import socket
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
 import yaml
 
 from flask import Blueprint, redirect, render_template, request, session, url_for
+
+
+# Single source of truth for "we couldn't detect anything; fall back to libvirt-style defaults."
+DEFAULT_NETWORK_FALLBACK = {
+    "gateway": "192.168.122.1",
+    "network_cidr": "192.168.122.0/24",
+    "ip_start": "192.168.122.100",
+    "ip_end": "192.168.122.199",
+}
+
+# Tag for terraform's authorized_keys entry. Allows clean key rotation: prior tagged
+# lines are stripped before the current key is appended.
+TF_KEY_COMMENT = "terraform@blockhost"
 
 blueprint = Blueprint(
     "provisioner_proxmox",
@@ -43,7 +58,6 @@ def wizard_proxmox():
                 return default
 
         session["proxmox"] = {
-            "api_url": request.form.get("pve_api_url"),
             "node": request.form.get("pve_node"),
             "storage": request.form.get("pve_storage"),
             "bridge": request.form.get("pve_bridge"),
@@ -145,13 +159,58 @@ def _write_tfvars(path: Path, data: dict):
     path.write_text("\n".join(lines) + "\n")
 
 
+# --- Detection helpers ---
+
+
+def _get_default_route_info() -> tuple[Optional[str], Optional[str]]:
+    """Return (iface, gateway) from the default route, or (None, None) if unavailable."""
+    try:
+        result = subprocess.run(
+            ["ip", "route", "show", "default"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return None, None
+        parts = result.stdout.strip().split()
+        iface = None
+        gateway = None
+        try:
+            iface = parts[parts.index("dev") + 1]
+        except (ValueError, IndexError):
+            pass
+        try:
+            gateway = parts[parts.index("via") + 1]
+        except (ValueError, IndexError):
+            pass
+        return iface, gateway
+    except Exception:
+        return None, None
+
+
+def _get_iface_ipv4(iface: str) -> tuple[Optional[str], Optional[int]]:
+    """Return (addr, prefixlen) for the first IPv4 address on `iface`."""
+    try:
+        result = subprocess.run(
+            ["ip", "-j", "addr", "show", iface],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return None, None
+        for info in json.loads(result.stdout):
+            for addr_info in info.get("addr_info", []):
+                if addr_info.get("family") == "inet":
+                    return addr_info.get("local"), addr_info.get("prefixlen")
+        return None, None
+    except Exception:
+        return None, None
+
+
 # --- Detection ---
 
 
 def _detect_proxmox_resources() -> dict:
     """Detect Proxmox VE resources (storage, bridges, node name, network)."""
     detected = {
-        "api_url": "https://127.0.0.1:8006",
         "node_name": socket.gethostname(),
         "storages": [],
         "bridges": [],
@@ -231,91 +290,30 @@ def _detect_proxmox_resources() -> dict:
 def _detect_network(bridges: list[str]) -> dict:
     """Detect gateway and subnet from the bridge or primary interface.
 
-    Returns dict with ip, prefix, gateway, network_cidr, ip_start, ip_end.
-    Falls back to 192.168.122.x defaults if detection fails.
+    Returns dict with gateway, network_cidr, ip_start, ip_end.
+    Falls back to DEFAULT_NETWORK_FALLBACK if detection fails.
     """
-    defaults = {
-        "gateway": "192.168.122.1",
-        "network_cidr": "192.168.122.0/24",
-        "ip_start": "192.168.122.100",
-        "ip_end": "192.168.122.199",
-    }
-
-    # Try bridge first (vmbr0), then fall back to default-route interface
-    iface = None
-    if bridges:
-        iface = bridges[0]
-    else:
-        try:
-            result = subprocess.run(
-                ["ip", "route", "show", "default"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                parts = result.stdout.strip().split()
-                dev_idx = parts.index("dev")
-                iface = parts[dev_idx + 1]
-        except Exception:
-            pass
-
+    default_iface, default_gateway = _get_default_route_info()
+    iface = bridges[0] if bridges else default_iface
     if not iface:
-        return defaults
+        return DEFAULT_NETWORK_FALLBACK
 
-    # Get IP + prefix from the interface
+    ipv4_addr, ipv4_prefix = _get_iface_ipv4(iface)
+    if not ipv4_addr or not ipv4_prefix:
+        return DEFAULT_NETWORK_FALLBACK
+
+    gateway = default_gateway or DEFAULT_NETWORK_FALLBACK["gateway"]
+
     try:
-        result = subprocess.run(
-            ["ip", "-j", "addr", "show", iface],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode != 0:
-            return defaults
-
-        iface_info = json.loads(result.stdout)
-        ipv4_addr = None
-        ipv4_prefix = None
-        for info in iface_info:
-            for addr_info in info.get("addr_info", []):
-                if addr_info.get("family") == "inet":
-                    ipv4_addr = addr_info.get("local")
-                    ipv4_prefix = addr_info.get("prefixlen")
-                    break
-            if ipv4_addr:
-                break
-
-        if not ipv4_addr or not ipv4_prefix:
-            return defaults
-    except Exception:
-        return defaults
-
-    # Get gateway from default route
-    gateway = defaults["gateway"]
-    try:
-        result = subprocess.run(
-            ["ip", "route", "show", "default"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            parts = result.stdout.strip().split()
-            via_idx = parts.index("via")
-            gateway = parts[via_idx + 1]
-    except Exception:
-        pass
-
-    # Compute network CIDR and IP pool range
-    import ipaddress as _ipaddress
-    try:
-        network = _ipaddress.IPv4Network(f"{ipv4_addr}/{ipv4_prefix}", strict=False)
-        # IP pool: .100 to .199 within the detected subnet
+        network = ipaddress.IPv4Network(f"{ipv4_addr}/{ipv4_prefix}", strict=False)
         base = int(network.network_address)
-        ip_start = str(_ipaddress.IPv4Address(base + 100))
-        ip_end = str(_ipaddress.IPv4Address(base + 199))
-        # Clamp to broadcast - 1
+        ip_start = str(ipaddress.IPv4Address(base + 100))
+        ip_end = str(ipaddress.IPv4Address(base + 199))
         broadcast = int(network.broadcast_address)
         if base + 199 >= broadcast:
-            ip_end = str(_ipaddress.IPv4Address(broadcast - 1))
+            ip_end = str(ipaddress.IPv4Address(broadcast - 1))
         if base + 100 >= broadcast:
-            ip_start = str(_ipaddress.IPv4Address(base + 2))
-
+            ip_start = str(ipaddress.IPv4Address(base + 2))
         return {
             "gateway": gateway,
             "network_cidr": str(network),
@@ -323,7 +321,7 @@ def _detect_network(bridges: list[str]) -> dict:
             "ip_end": ip_end,
         }
     except Exception:
-        return defaults
+        return DEFAULT_NETWORK_FALLBACK
 
 
 # --- Finalization Functions ---
@@ -426,21 +424,23 @@ def finalize_terraform(config: dict) -> tuple[bool, Optional[str]]:
             _set_blockhost_ownership(ssh_key_file, 0o640)
             ssh_pub_file.chmod(0o644)
 
-        # Add public key to root's authorized_keys
+        # Add public key to root's authorized_keys.
+        # Strip any prior tagged lines (TF_KEY_COMMENT) so key rotation doesn't
+        # accumulate stale credentials.
         authorized_keys = Path("/root/.ssh/authorized_keys")
         authorized_keys.parent.mkdir(parents=True, exist_ok=True)
 
         pub_key = ssh_pub_file.read_text().strip()
 
-        # Check if key already exists
-        existing_keys = ""
+        existing_lines = []
         if authorized_keys.exists():
-            existing_keys = authorized_keys.read_text()
+            existing_lines = authorized_keys.read_text().splitlines()
 
-        if pub_key not in existing_keys:
-            with open(authorized_keys, "a") as f:
-                f.write(f"\n{pub_key}\n")
-            authorized_keys.chmod(0o600)
+        kept = [line for line in existing_lines if TF_KEY_COMMENT not in line]
+        kept.append(pub_key)
+
+        authorized_keys.write_text("\n".join(kept) + "\n")
+        authorized_keys.chmod(0o600)
 
         # Write provider.tf.json with bpg/proxmox provider
         provider_config = {
@@ -584,54 +584,13 @@ def finalize_bridge(config: dict) -> tuple[bool, Optional[str]]:
             return True, None
 
         # Find the primary network interface (the one with a default route)
-        result = subprocess.run(
-            ["ip", "route", "show", "default"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-
-        if result.returncode != 0 or not result.stdout.strip():
+        primary_iface, gateway = _get_default_route_info()
+        if not primary_iface:
             return False, "Could not determine default network interface"
-
-        # Parse: "default via 192.168.122.1 dev ens3 proto dhcp src 192.168.122.195 metric 100"
-        parts = result.stdout.strip().split()
-        try:
-            dev_idx = parts.index("dev")
-            primary_iface = parts[dev_idx + 1]
-        except (ValueError, IndexError):
-            return False, f"Could not parse default route: {result.stdout}"
-
-        try:
-            via_idx = parts.index("via")
-            gateway = parts[via_idx + 1]
-        except (ValueError, IndexError):
+        if not gateway:
             return False, "Could not determine gateway from default route"
 
-        # Get current IP configuration from the primary interface
-        result = subprocess.run(
-            ["ip", "-j", "addr", "show", primary_iface],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-
-        if result.returncode != 0:
-            return False, f"Could not get IP config for {primary_iface}"
-
-        iface_info = json.loads(result.stdout)
-
-        # Find IPv4 address
-        ipv4_addr = None
-        ipv4_prefix = None
-
-        for info in iface_info:
-            for addr_info in info.get("addr_info", []):
-                if addr_info.get("family") == "inet":
-                    ipv4_addr = addr_info.get("local")
-                    ipv4_prefix = addr_info.get("prefixlen")
-                    break
-
+        ipv4_addr, ipv4_prefix = _get_iface_ipv4(primary_iface)
         if not ipv4_addr or not ipv4_prefix:
             return False, f"Could not find IPv4 address on {primary_iface}"
 
@@ -680,7 +639,9 @@ def finalize_bridge(config: dict) -> tuple[bool, Optional[str]]:
         # Non-fatal if this fails -- PVE may handle it automatically
 
         # Step 3: Apply the staged network config
-        # This rewrites /etc/network/interfaces and reloads networking
+        # This rewrites /etc/network/interfaces and reloads networking.
+        # If this fails, persistent config is missing — surface the error and try
+        # ifreload as a session-only fallback. The bridge will be missing on reboot.
         result = subprocess.run(
             ["pvesh", "set", f"/nodes/{node_name}/network"],
             capture_output=True,
@@ -689,12 +650,24 @@ def finalize_bridge(config: dict) -> tuple[bool, Optional[str]]:
         )
 
         if result.returncode != 0:
-            # Apply failed -- try ifreload as fallback
-            subprocess.run(
+            apply_err = (result.stderr or result.stdout or "").strip()
+            print(
+                f"WARNING: pvesh network apply failed; persistent bridge config "
+                f"NOT written. Bridge will be missing after reboot. Error: {apply_err}",
+                file=sys.stderr,
+            )
+            ifreload = subprocess.run(
                 ["ifreload", "-a"],
                 capture_output=True,
+                text=True,
                 timeout=30,
             )
+            if ifreload.returncode != 0:
+                ifreload_err = (ifreload.stderr or ifreload.stdout or "").strip()
+                print(
+                    f"WARNING: ifreload fallback also failed: {ifreload_err}",
+                    file=sys.stderr,
+                )
 
         # Step 4: Ephemeral fallback -- bring bridge up with ip commands
         # if pvesh apply didn't fully activate it during this session
@@ -787,43 +760,29 @@ def finalize_template(config: dict) -> tuple[bool, Optional[str]]:
             # Template VM already exists, skip building
             return True, None
 
-        # Find libpam-web3 .deb in template-packages directory
-        template_pkg_dir = Path("/var/lib/blockhost/template-packages")
-        libpam_deb = None
-
-        if template_pkg_dir.exists():
-            debs = list(template_pkg_dir.glob("libpam-web3_*.deb"))
-            if debs:
-                # Use the most recent one if multiple exist
-                libpam_deb = str(
-                    sorted(debs, key=lambda p: p.stat().st_mtime, reverse=True)[0]
-                )
-
-        # Build template - use installed command from .deb package
+        # Build template - use installed command from .deb package.
+        # build-template.sh discovers all .deb files in /var/lib/blockhost/template-packages/
+        # itself; no per-deb env vars are needed.
         build_script = Path("/usr/bin/blockhost-build-template")
-        if build_script.exists():
-            # Set up environment for build script
-            env = os.environ.copy()
-            env["TEMPLATE_VMID"] = str(template_vmid)
-            env["STORAGE"] = storage
-            env["PROXMOX_HOST"] = "localhost"
-
-            if libpam_deb:
-                env["LIBPAM_WEB3_DEB"] = libpam_deb
-
-            result = subprocess.run(
-                [str(build_script)],
-                capture_output=True,
-                text=True,
-                timeout=1800,  # 30 minutes
-                env=env,
-            )
-
-            if result.returncode != 0:
-                return False, result.stderr or "Template build failed"
-        else:
-            # Template build script not found - skip for now
+        if not build_script.exists():
+            # Template build script not found — skip for now
             return True, None
+
+        env = os.environ.copy()
+        env["TEMPLATE_VMID"] = str(template_vmid)
+        env["STORAGE"] = storage
+        env["PROXMOX_HOST"] = "localhost"
+
+        result = subprocess.run(
+            [str(build_script)],
+            capture_output=True,
+            text=True,
+            timeout=1800,  # 30 minutes
+            env=env,
+        )
+
+        if result.returncode != 0:
+            return False, result.stderr or "Template build failed"
 
         return True, None
     except subprocess.TimeoutExpired:

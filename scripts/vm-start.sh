@@ -8,7 +8,8 @@ VM_NAME="$1"
 exec python3 - "$VM_NAME" << 'PYEOF'
 import sys
 
-from blockhost.root_agent import RootAgentError, call, qm_start
+from blockhost.config import load_db_config
+from blockhost.root_agent import RootAgentError, call, ip6_route_add, qm_start
 from blockhost.vm_db import get_database
 
 vm_name = sys.argv[1]
@@ -24,6 +25,16 @@ except RootAgentError as e:
     print(f"Error starting {vm_name}: {e}", file=sys.stderr)
     sys.exit(1)
 print(f"Started {vm_name} (VMID {vm['vmid']})")
+
+# Re-add IPv6 host route. The kernel routing table doesn't survive host reboots,
+# so we re-add on every start. ip6_route_add uses `ip -6 route replace` (idempotent).
+ipv6 = vm.get("ipv6_address")
+if ipv6:
+    bridge = load_db_config().get("bridge", "vmbr0")
+    try:
+        ip6_route_add(f"{ipv6}/128", bridge)
+    except RootAgentError as e:
+        print(f"Warning: IPv6 route add failed: {e}", file=sys.stderr)
 
 # Enable bridge port isolation so VMs cannot see each other's L2 traffic
 tap_dev = f"tap{vm['vmid']}i0"

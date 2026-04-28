@@ -49,34 +49,13 @@ from blockhost.config import (
     load_db_config,
     load_web3_config,
 )
-from blockhost.provisioner_proxmox import get_terraform_dir, sanitize_resource_name
+from blockhost.provisioner_proxmox import (
+    get_terraform_dir,
+    load_tfvars,
+    sanitize_resource_name,
+)
 from blockhost.root_agent import RootAgentError, call, ip6_route_add
 from blockhost.vm_db import get_database
-
-
-def load_terraform_vars() -> dict:
-    """Load variables from terraform.tfvars in the terraform directory."""
-    tf_dir = get_terraform_dir()
-    tfvars_file = tf_dir / "terraform.tfvars"
-
-    if not tfvars_file.exists():
-        return {}
-
-    variables = {}
-    content = tfvars_file.read_text()
-
-    # Simple HCL parser for key = "value" pairs
-    for line in content.split("\n"):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" in line:
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip('"')
-            variables[key] = value
-
-    return variables
 
 
 def load_ssh_keys() -> list[str]:
@@ -97,6 +76,7 @@ def load_ssh_keys() -> list[str]:
 def generate_tf_config(
     name: str,
     ip_address: str,
+    ipv4_prefix: int,
     gateway: str,
     tf_dir: Path,
     cpu_cores: int = 1,
@@ -146,7 +126,7 @@ def generate_tf_config(
             "datastore_id": cloudinit_datastore,
             "ip_config": {
                 "ipv4": {
-                    "address": f"{ip_address}/24",
+                    "address": f"{ip_address}/{ipv4_prefix}",
                     "gateway": gateway
                 },
                 **({"ipv6": {"address": f"{ipv6_address}/120", **({"gateway": ipv6_gateway} if ipv6_gateway else {})}} if ipv6_address else {})
@@ -183,7 +163,7 @@ def generate_tf_config(
         tf_config["resource"]["proxmox_virtual_environment_file"] = {
             f"cloud_config_{resource_name}": {
                 "content_type": "snippets",
-                "datastore_id": "local",
+                "datastore_id": cloudinit_datastore,
                 "node_name": node_name,
                 "source_file": {
                     "path": str(cloud_init_file),
@@ -206,7 +186,11 @@ def write_tf_file(name: str, config: dict) -> Path:
 
 
 def run_terraform(action: str = "plan", target: str = None) -> int:
-    """Run terraform command in terraform_dir."""
+    """Run terraform command in terraform_dir.
+
+    Output is captured and forwarded to stderr so this script's stdout stays
+    reserved for the JSON summary that the engine consumes as the last line.
+    """
     tf_dir = get_terraform_dir()
     cmd = ["terraform", action]
     if target:
@@ -214,8 +198,12 @@ def run_terraform(action: str = "plan", target: str = None) -> int:
     if action == "apply":
         cmd.append("-auto-approve")
 
-    print(f"Running: {' '.join(cmd)} (in {tf_dir})")
-    result = subprocess.run(cmd, cwd=tf_dir)
+    print(f"Running: {' '.join(cmd)} (in {tf_dir})", file=sys.stderr)
+    result = subprocess.run(cmd, cwd=tf_dir, capture_output=True, text=True)
+    if result.stdout:
+        sys.stderr.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
     return result.returncode
 
 
@@ -286,7 +274,7 @@ Examples:
     if args.disk < 1:
         parser.error("--disk must be at least 1")
 
-    # Validate wallet address format (alphanumeric, matches GECOS_RE expectations)
+    # Validate wallet address format (alphanumeric, what we'll bake into GECOS).
     if args.owner_wallet and not re.match(r'^[a-zA-Z0-9]{1,128}$', args.owner_wallet):
         parser.error("--owner-wallet must be 1-128 alphanumeric characters")
 
@@ -303,7 +291,7 @@ Examples:
             parser.error(f"--ipv6 is not a valid IPv6 address: {args.ipv6}")
 
     # Load terraform.tfvars for defaults
-    tfvars = load_terraform_vars()
+    tfvars = load_tfvars(get_terraform_dir() / "terraform.tfvars")
 
     # Resolve node name: CLI arg > terraform.tfvars > default
     if not args.node:
@@ -326,10 +314,17 @@ Examples:
     # Initialize database
     db = get_database(use_mock=args.mock)
 
-    # Check if VM already exists
+    # Check if VM already exists. Reject any present-or-recoverable record so we
+    # don't silently obliterate a suspended VM the user could still resume.
+    # (Note: destroyed-name reuse hits a hard reject in register_vm because
+    # blockhost-common's VM database doesn't expose a delete_vm primitive yet.
+    # Treat destroyed records the same as active/suspended for now.)
     existing = db.get_vm(args.name)
-    if existing and existing.get("status") == "active":
-        print(f"Error: VM '{args.name}' already exists and is active")
+    if existing and existing.get("status") in ("active", "suspended", "destroyed"):
+        print(
+            f"Error: VM '{args.name}' already exists "
+            f"(status={existing.get('status')})"
+        )
         sys.exit(1)
 
     # Allocate resources
@@ -365,7 +360,7 @@ Examples:
         broker = load_broker_allocation()
         if broker and broker.get("prefix"):
             network = ipaddress.IPv6Network(broker["prefix"], strict=False)
-            # Gateway is first host address in the prefix (Proxmox host's vmbr0 address)
+            # Gateway is first host address in the prefix (the host's bridge address)
             ipv6_gateway = str(network.network_address + 1)
             print(f"IPv6 gateway: {ipv6_gateway}")
 
@@ -374,9 +369,13 @@ Examples:
     if not ssh_keys:
         print("Warning: No SSH keys found. VM will be created without SSH keys.")
 
-    # Get gateway from DB config
+    # Get gateway, IPv4 prefix, and bridge from DB config
     db_config = load_db_config()
     gateway = db_config["ip_pool"]["gateway"]
+    ipv4_prefix = ipaddress.IPv4Network(
+        db_config["ip_pool"]["network"], strict=False
+    ).prefixlen
+    bridge = db_config.get("bridge", "vmbr0")
 
     # Build cloud-init content
     cloud_init_content = None
@@ -449,6 +448,7 @@ Examples:
     tf_config = generate_tf_config(
         name=args.name,
         ip_address=ip_address,
+        ipv4_prefix=ipv4_prefix,
         gateway=gateway,
         tf_dir=tf_dir,
         cpu_cores=args.cpu,
@@ -487,18 +487,41 @@ Examples:
 
     # Apply if requested
     if args.apply:
+        resource_name = sanitize_resource_name(args.name)
+        target = f"proxmox_virtual_environment_vm.{resource_name}"
+
+        def _rollback(reason: str):
+            """Best-effort cleanup when terraform init/apply fails after register_vm."""
+            print(f"\nRolling back: {reason}", file=sys.stderr)
+            try:
+                subprocess.run(
+                    ["terraform", "destroy", "-target", target, "-auto-approve"],
+                    cwd=str(tf_dir),
+                    capture_output=True,
+                )
+            except Exception as e:
+                print(f"  rollback: terraform destroy: {e}", file=sys.stderr)
+            for f in (tf_file, tf_dir / f"{args.name}-cloud-config.yaml"):
+                try:
+                    if f.exists():
+                        f.unlink()
+                except OSError as e:
+                    print(f"  rollback: unlink {f}: {e}", file=sys.stderr)
+            try:
+                db.mark_destroyed(args.name)
+            except Exception as e:
+                print(f"  rollback: mark_destroyed: {e}", file=sys.stderr)
+
         print("\nInitializing Terraform...")
         if run_terraform("init") != 0:
-            print("Error: terraform init failed")
+            _rollback("terraform init failed")
             sys.exit(1)
 
         print("\nApplying Terraform configuration...")
-        resource_name = sanitize_resource_name(args.name)
-        target = f"proxmox_virtual_environment_vm.{resource_name}"
         apply_result = run_terraform("apply", target)
 
         if apply_result != 0:
-            print(f"\nError: terraform apply failed")
+            _rollback("terraform apply failed")
             sys.exit(1)
 
         print(f"\nVM '{args.name}' created successfully!")
@@ -510,11 +533,11 @@ Examples:
         ssh_host = ipv6_address or ip_address
         print(f"  SSH: ssh {args.username}@{ssh_host}")
 
-        # Add IPv6 host route so inbound traffic from wg-broker reaches the VM via vmbr0
+        # Add IPv6 host route so inbound traffic from wg-broker reaches the VM via the bridge
         if ipv6_address:
             try:
-                ip6_route_add(f"{ipv6_address}/128", "vmbr0")
-                print(f"  IPv6 host route: {ipv6_address}/128 via vmbr0")
+                ip6_route_add(f"{ipv6_address}/128", bridge)
+                print(f"  IPv6 host route: {ipv6_address}/128 via {bridge}")
             except RootAgentError as e:
                 print(f"  Warning: Failed to add IPv6 host route: {e}")
 
