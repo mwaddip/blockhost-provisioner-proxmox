@@ -77,7 +77,8 @@ entry_points:
       - Allocated VMID
       - Allocated IPv4 address
       - Allocated IPv6 address (if broker pool configured)
-      - VM record written to vms.json (db.register_vm)
+      - VM record written to vms.json (db.register_vm) including network_mode
+        (resolved from /etc/blockhost/network-modes.enabled/)
       - Sentinel-prefixed JSON summary on stdout (when --apply succeeds)
     json_output:
       description: |
@@ -567,10 +568,18 @@ workflow:
           Skipped in --mock mode. Released via atexit + SIGINT/SIGTERM handlers.
           Engines (e.g. blockhost-engine-opnet) read this file's presence to defer
           reconciliation while a create is in flight.
-      - 1: Allocate VMID, IPv4 and IPv6 (db.allocate_vmid, db.allocate_ip, db.allocate_ipv6)
-      - 2: Compute IPv6 gateway from broker prefix (first host address, offset +1)
-      - 3: Load Proxmox settings from terraform.tfvars (node, datastores)
-      - 4: |
+      - 1: |
+          Resolve the active network_mode by listing /etc/blockhost/network-modes.enabled/
+          (apache sites-available/sites-enabled pattern). Single symlink → basename
+          minus .json. Zero or multiple symlinks → exit non-zero before allocation
+          (multi-mode requires a per-VM resolver that is out of scope here).
+          The resolved value is snapshotted into the VM record at step 9
+          (register_vm) and never mutated. See facts/NETWORK_INTERFACE.md §6 and
+          facts/PROVISIONER_INTERFACE.md vm-create / step 2.
+      - 2: Allocate VMID, IPv4 and IPv6 (db.allocate_vmid, db.allocate_ip, db.allocate_ipv6)
+      - 3: Compute IPv6 gateway from broker prefix (first host address, offset +1)
+      - 4: Load Proxmox settings from terraform.tfvars (node, datastores)
+      - 5: |
           Use --cloud-init-content if provided, otherwise render cloud-init template with variables:
           VM_NAME, VM_IP, VM_IPV6, SIGNING_HOST, SIGNING_DOMAIN, USERNAME,
           WALLET_ADDRESS, OTP_LENGTH, OTP_TTL, SECRET_KEY, SSH_KEYS.
@@ -578,47 +587,56 @@ workflow:
           WALLET_ADDRESS comes from --owner-wallet (passed by engine).
           SIGNING_DOMAIN is the broker DNS FQDN ({hex_offset}.{dns_zone}) when dns_zone is present,
           empty string otherwise. SIGNING_HOST is SIGNING_DOMAIN when available, else [IPv6] or IPv4.
-      - 5: |
+      - 6: |
           Generate .tf.json config (with dual-stack IPv4/IPv6, datastore_id, ipv6_gateway).
           IPv4 prefix length is derived from db_config["ip_pool"]["network"].
-      - 6: |
+      - 7: |
           Run terraform init + apply (if --apply). On failure, roll back via
           `terraform destroy -target=...`, remove .tf.json + cloud-config,
           and release IPv4/IPv6 allocations directly (no DB record exists yet).
-      - 7: |
+      - 8: |
           Wait for the qemu-guest-agent to come online (poll qm-guest-ping every
           GUEST_READY_POLL_INTERVAL seconds, up to GUEST_READY_TIMEOUT=180s).
           Required by facts/PROVISIONER_INTERFACE.md "Guest readiness" — the
           engine's post-create handler immediately calls network_hook and
           update-gecos via guest-exec; without this wait those calls race the
           agent boot and the VM ends up with no GECOS (no SSH auth).
-          On timeout, runs the same rollback as step 6 (terraform destroy +
+          On timeout, runs the same rollback as step 7 (terraform destroy +
           file cleanup + release allocations) and exits non-zero. Does NOT
           print BLOCKHOST_RESULT.
-      - 8: |
-          Register VM in DB (db.register_vm) — provisioner-owned per
-          facts/PROVISIONER_INTERFACE.md §2. Engines no longer call this.
-          Includes username so libpam-web3 can resolve the GECOS owner.
-          On failure (e.g. duplicate-name race), runs the same rollback as
-          step 6 and exits non-zero so we never leave an orphan VM in Proxmox.
       - 9: |
+          Register VM in DB (db.register_vm, including network_mode resolved
+          at step 1) — provisioner-owned per facts/PROVISIONER_INTERFACE.md §2.
+          Engines no longer call register_vm. Includes username so libpam-web3
+          can resolve the GECOS owner. Common rejects empty/missing
+          network_mode (per facts/NETWORK_INTERFACE.md §6); the dispatcher
+          then uses the field to route push-vm-config / cleanup / public-address
+          for this VM. On failure (e.g. duplicate-name race), runs the same
+          rollback as step 7 and exits non-zero so we never leave an orphan
+          VM in Proxmox.
+      - 10: |
           Add IPv6 host route via root agent (ip6_route_add <ipv6>/128 <bridge>)
           where bridge is read from db_config["bridge"].
-      - 10: Enable bridge port isolation on tap interface (non-fatal, warns on failure)
-      - 11: |
+      - 11: Enable bridge port isolation on tap interface (non-fatal, warns on failure)
+      - 12: |
           Print result line `BLOCKHOST_RESULT: <json>` on stdout. Exactly one such
           sentinel line on success; engines parse by prefix (other stdout is informational).
     on_failure:
       - |
         terraform init/apply, guest-readiness timeout, or register_vm failure
-        triggers a single rollback (see steps 6, 7, 8): `terraform destroy
+        triggers a single rollback (see steps 7, 8, 9): `terraform destroy
         -target=...`, .tf.json + cloud-config files removed, IPv4/IPv6
         allocations released directly via release_ip / release_ipv6
         (MockVMDatabase doesn't expose these — guarded by hasattr).
+        network_mode resolution failure (step 1) exits before any allocation
+        and needs no rollback.
     blockhost_common_requirements: |
       The provisioner requires these blockhost-common features:
-      - register_vm(..., ipv6=None): Store IPv6 address in VM record
+      - register_vm(..., ipv6=None, network_mode=...): Store IPv6 address and
+        the active network mode in the VM record. network_mode is required;
+        common rejects empty/missing values.
       - VM records must include ipv6_address field for route cleanup
+      - VM records must include network_mode for blockhost-network-hook dispatch
       - blockhost.root_agent: Client for privileged operations (qm_*, ip6_route_*)
     ipv6_notes:
       description: |

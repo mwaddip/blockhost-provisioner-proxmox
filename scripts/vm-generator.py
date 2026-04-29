@@ -6,12 +6,13 @@ Generates Terraform configuration files for Proxmox VMs with NFT-based
 web3 authentication.
 
 Workflow (with --apply):
-1. Allocate resources (VMID, IPv4, IPv6)
-2. Generate Terraform config with cloud-init
-3. Apply Terraform to create the VM
-4. Wait for the qemu-guest-agent to come online (rollback on timeout)
-5. Register the VM in the DB (blockhost.vm_db.register_vm)
-6. Print `BLOCKHOST_RESULT: <json>` sentinel line on stdout
+1. Resolve the active network_mode from /etc/blockhost/network-modes.enabled/
+2. Allocate resources (VMID, IPv4, IPv6)
+3. Generate Terraform config with cloud-init
+4. Apply Terraform to create the VM
+5. Wait for the qemu-guest-agent to come online (rollback on timeout)
+6. Register the VM in the DB (blockhost.vm_db.register_vm, with network_mode)
+7. Print `BLOCKHOST_RESULT: <json>` sentinel line on stdout
 
 The engine owns the NFT lifecycle. At creation time, --nft-token-id is
 optional — the VM is created with GECOS wallet=ADDRESS. After minting,
@@ -70,6 +71,12 @@ from blockhost.vm_db import get_database
 # systemd unit's ExecStartPre — provisioner runs as `blockhost` and writes here.
 PROVISIONING_LOCK = Path("/run/blockhost/provisioning.lock")
 
+# Apache-style sites-available/sites-enabled symlink dir for network plugins.
+# A single symlink here picks the global mode; multi-mode (plan-id or wizard
+# choice) is out of scope for now. See facts/NETWORK_INTERFACE.md §2 + §6 and
+# facts/PROVISIONER_INTERFACE.md vm-create / step 2.
+NETWORK_MODES_ENABLED_DIR = Path("/etc/blockhost/network-modes.enabled")
+
 # Guest-readiness wait — see facts/PROVISIONER_INTERFACE.md "Guest readiness".
 # The engine immediately follows vm-create with guest-exec calls (network_hook,
 # update-gecos) so we MUST not return until the qemu-guest-agent answers; cloud-init
@@ -104,6 +111,35 @@ def _wait_for_guest_ready(vmid: int, timeout: int = GUEST_READY_TIMEOUT) -> bool
             )
             return False
         time.sleep(GUEST_READY_POLL_INTERVAL)
+
+
+def _resolve_active_network_mode() -> str:
+    """Return the single enabled network mode (file basename minus .json).
+
+    Today there is exactly one symlink in NETWORK_MODES_ENABLED_DIR; basename
+    minus .json is the mode name. Multi-mode (plan-id mapping, per-VM wizard
+    choice) is out of scope here — when more than one symlink is present we
+    fail loudly so the operator wires a per-VM resolver before allowing
+    concurrent modes. See facts/NETWORK_INTERFACE.md §6 and
+    facts/PROVISIONER_INTERFACE.md vm-create / step 2.
+    """
+    if not NETWORK_MODES_ENABLED_DIR.is_dir():
+        raise RuntimeError(
+            f"{NETWORK_MODES_ENABLED_DIR} does not exist; no network mode enabled"
+        )
+    entries = sorted(
+        p for p in NETWORK_MODES_ENABLED_DIR.iterdir() if p.suffix == ".json"
+    )
+    if not entries:
+        raise RuntimeError(
+            f"no network mode enabled (empty {NETWORK_MODES_ENABLED_DIR})"
+        )
+    if len(entries) > 1:
+        names = ", ".join(p.stem for p in entries)
+        raise RuntimeError(
+            f"multiple modes enabled but no per-VM resolver wired: {names}"
+        )
+    return entries[0].stem
 
 
 def _read_lock_pid() -> int | None:
@@ -440,6 +476,16 @@ Examples:
         )
         sys.exit(1)
 
+    # Resolve the active network mode before allocating anything — fail fast
+    # if no plugin is enabled (or if multi-mode lands without a per-VM resolver).
+    # Snapshotted into the VM record at register_vm time and never mutated.
+    try:
+        network_mode = _resolve_active_network_mode()
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    print(f"Network mode: {network_mode}")
+
     # Allocate resources
     if args.vmid:
         vmid = args.vmid
@@ -660,6 +706,7 @@ Examples:
                 purpose=args.purpose,
                 wallet_address=args.owner_wallet if web3_enabled else None,
                 username=args.username,
+                network_mode=network_mode,
             )
         except Exception as e:
             _rollback(f"register_vm failed: {e}")
