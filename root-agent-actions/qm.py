@@ -40,6 +40,33 @@ def _handle_qm_simple(params, subcommand, extra_args=(), timeout=120):
     return {'ok': True, 'output': out}
 
 
+def handle_qm_guest_ping(params):
+    """Probe the qemu-guest-agent via `qm guest cmd <vmid> ping`.
+
+    Used by vm-create to wait for the agent to come online before declaring
+    success — see facts/PROVISIONER_INTERFACE.md "Guest readiness". The agent
+    only answers once cloud-init has booted far enough to start it, so a
+    successful ping is the earliest signal that downstream guest-exec calls
+    (network_hook, update-gecos) will work.
+
+    params:
+        vmid (int): VM ID
+
+    Returns:
+        {ok: True}                — agent responded
+        {ok: False, error: str}   — agent unresponsive (not running yet, VM
+                                    not found, or qm itself failed)
+    """
+    vmid = validate_vmid(params['vmid'])
+    rc, out, err = run(
+        ['qm', 'guest', 'cmd', str(vmid), 'ping'],
+        timeout=10,
+    )
+    if rc != 0:
+        return {'ok': False, 'error': (err or out or f'guest-ping failed with rc={rc}').strip()}
+    return {'ok': True}
+
+
 def handle_qm_guest_exec(params):
     """Execute a shell command inside a running VM via qm guest exec.
 
@@ -226,6 +253,7 @@ ACTIONS = {
     'qm-shutdown': lambda p: _handle_qm_simple(p, 'shutdown', timeout=300),
     'qm-destroy': lambda p: _handle_qm_simple(p, 'destroy', extra_args=['--purge']),
     'qm-guest-exec': handle_qm_guest_exec,
+    'qm-guest-ping': handle_qm_guest_ping,
     'pve-set-throttle': handle_pve_set_throttle,
     'tc-rate-limit': handle_tc_rate_limit,
 }

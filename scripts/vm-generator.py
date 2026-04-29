@@ -9,8 +9,9 @@ Workflow (with --apply):
 1. Allocate resources (VMID, IPv4, IPv6)
 2. Generate Terraform config with cloud-init
 3. Apply Terraform to create the VM
-4. Register the VM in the DB (blockhost.vm_db.register_vm)
-5. Print `BLOCKHOST_RESULT: <json>` sentinel line on stdout
+4. Wait for the qemu-guest-agent to come online (rollback on timeout)
+5. Register the VM in the DB (blockhost.vm_db.register_vm)
+6. Print `BLOCKHOST_RESULT: <json>` sentinel line on stdout
 
 The engine owns the NFT lifecycle. At creation time, --nft-token-id is
 optional — the VM is created with GECOS wallet=ADDRESS. After minting,
@@ -45,6 +46,7 @@ import secrets
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from blockhost.cloud_init import render_cloud_init
@@ -67,6 +69,41 @@ from blockhost.vm_db import get_database
 # /run/blockhost is created (root:blockhost, mode 2775) by the engine's
 # systemd unit's ExecStartPre — provisioner runs as `blockhost` and writes here.
 PROVISIONING_LOCK = Path("/run/blockhost/provisioning.lock")
+
+# Guest-readiness wait — see facts/PROVISIONER_INTERFACE.md "Guest readiness".
+# The engine immediately follows vm-create with guest-exec calls (network_hook,
+# update-gecos) so we MUST not return until the qemu-guest-agent answers; cloud-init
+# can take a while on slow hosts or under nested virt.
+GUEST_READY_TIMEOUT = 180  # seconds
+GUEST_READY_POLL_INTERVAL = 3  # seconds
+
+
+def _wait_for_guest_ready(vmid: int, timeout: int = GUEST_READY_TIMEOUT) -> bool:
+    """Poll qemu-guest-agent ping until success or timeout.
+
+    Returns True once the agent answers, False on timeout. Caller is responsible
+    for rollback on False — we don't trigger destruction here so the function
+    is reusable in non-create contexts.
+    """
+    deadline = time.monotonic() + timeout
+    last_error = None
+    attempts = 0
+    while True:
+        attempts += 1
+        try:
+            call("qm-guest-ping", vmid=vmid, timeout=10)
+            print(f"  qemu-guest-agent online after {attempts} attempt(s)")
+            return True
+        except RootAgentError as e:
+            last_error = e
+        if time.monotonic() >= deadline:
+            print(
+                f"Timed out after {timeout}s waiting for qemu-guest-agent on VMID {vmid} "
+                f"(attempts={attempts}, last error: {last_error})",
+                file=sys.stderr,
+            )
+            return False
+        time.sleep(GUEST_READY_POLL_INTERVAL)
 
 
 def _read_lock_pid() -> int | None:
@@ -596,6 +633,16 @@ Examples:
 
         if apply_result != 0:
             _rollback("terraform apply failed")
+            sys.exit(1)
+
+        # Wait for the qemu-guest-agent before registering the VM. The engine's
+        # post-create handler immediately calls network_hook and update-gecos
+        # via guest-exec; if we return before the agent is up those calls fail
+        # and the VM is left without a working GECOS (no SSH auth).
+        # See facts/PROVISIONER_INTERFACE.md "Guest readiness".
+        print("\nWaiting for qemu-guest-agent...")
+        if not _wait_for_guest_ready(vmid):
+            _rollback("qemu-guest-agent did not come online within timeout")
             sys.exit(1)
 
         # VM is up in Proxmox; record it in the DB before announcing success.

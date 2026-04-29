@@ -1,6 +1,6 @@
 # Blockhost Provisioner Project Manifest
 # Machine-readable overview for integration and automation
-# Last updated: 2026-04-28 (provisioner-owned register_vm/mark_destroyed + BLOCKHOST_RESULT sentinel)
+# Last updated: 2026-04-29 (vm-create waits for qemu-guest-agent before BLOCKHOST_RESULT)
 
 name: blockhost-provisioner-proxmox
 version: "0.2.0"
@@ -416,6 +416,7 @@ root_agent_actions:
     qm-shutdown: Gracefully shut down a VM (qm shutdown <vmid>)
     qm-destroy: Destroy a VM and purge disk (qm destroy <vmid> --purge)
     qm-guest-exec: Generic primitive — run a shell command in a VM via qm guest exec + /bin/sh -c; returns exitcode, stdout, stderr
+    qm-guest-ping: Probe qemu-guest-agent via qm guest cmd <vmid> ping; returns ok=True when responsive (used by vm-create to wait for guest readiness)
     pve-set-throttle: Apply CPU/IOPS limits via qm set (dedicated throttle allowlist)
     tc-rate-limit: Apply/remove bandwidth limits via tc on VM tap interfaces
   security:
@@ -527,6 +528,7 @@ privilege_separation:
     - qm_template: Convert a VM to a template
     - qm_update_gecos: Update VM user GECOS field
     - qm_guest_exec: Run a shell command inside a running VM via qm guest exec
+    - qm_guest_ping: Probe qemu-guest-agent for responsiveness (vm-create readiness wait)
     - ip6_route_add: Add IPv6 host route (shipped by blockhost-common)
     - ip6_route_del: Remove IPv6 host route (shipped by blockhost-common)
     - bridge_port_isolate: Set bridge port isolation on tap interface (shipped by blockhost-common)
@@ -584,24 +586,35 @@ workflow:
           `terraform destroy -target=...`, remove .tf.json + cloud-config,
           and release IPv4/IPv6 allocations directly (no DB record exists yet).
       - 7: |
+          Wait for the qemu-guest-agent to come online (poll qm-guest-ping every
+          GUEST_READY_POLL_INTERVAL seconds, up to GUEST_READY_TIMEOUT=180s).
+          Required by facts/PROVISIONER_INTERFACE.md "Guest readiness" — the
+          engine's post-create handler immediately calls network_hook and
+          update-gecos via guest-exec; without this wait those calls race the
+          agent boot and the VM ends up with no GECOS (no SSH auth).
+          On timeout, runs the same rollback as step 6 (terraform destroy +
+          file cleanup + release allocations) and exits non-zero. Does NOT
+          print BLOCKHOST_RESULT.
+      - 8: |
           Register VM in DB (db.register_vm) — provisioner-owned per
           facts/PROVISIONER_INTERFACE.md §2. Engines no longer call this.
           Includes username so libpam-web3 can resolve the GECOS owner.
           On failure (e.g. duplicate-name race), runs the same rollback as
           step 6 and exits non-zero so we never leave an orphan VM in Proxmox.
-      - 8: |
+      - 9: |
           Add IPv6 host route via root agent (ip6_route_add <ipv6>/128 <bridge>)
           where bridge is read from db_config["bridge"].
-      - 9: Enable bridge port isolation on tap interface (non-fatal, warns on failure)
-      - 10: |
+      - 10: Enable bridge port isolation on tap interface (non-fatal, warns on failure)
+      - 11: |
           Print result line `BLOCKHOST_RESULT: <json>` on stdout. Exactly one such
           sentinel line on success; engines parse by prefix (other stdout is informational).
     on_failure:
       - |
-        terraform init/apply or register_vm failure triggers a single rollback
-        (see steps 6, 7): `terraform destroy -target=...`, .tf.json + cloud-config
-        files removed, IPv4/IPv6 allocations released directly via release_ip /
-        release_ipv6 (MockVMDatabase doesn't expose these — guarded by hasattr).
+        terraform init/apply, guest-readiness timeout, or register_vm failure
+        triggers a single rollback (see steps 6, 7, 8): `terraform destroy
+        -target=...`, .tf.json + cloud-config files removed, IPv4/IPv6
+        allocations released directly via release_ip / release_ipv6
+        (MockVMDatabase doesn't expose these — guarded by hasattr).
     blockhost_common_requirements: |
       The provisioner requires these blockhost-common features:
       - register_vm(..., ipv6=None): Store IPv6 address in VM record

@@ -81,6 +81,11 @@ case "$1" in
         systemctl enable blockhost-gc.timer
         systemctl start blockhost-gc.timer
 
+        # Reload the root agent so new/updated actions in
+        # /usr/share/blockhost/root-agent-actions/qm.py become available.
+        # try-restart is a no-op if the service isn't running yet (first install).
+        systemctl try-restart blockhost-root-agent 2>/dev/null || true
+
         echo ""
         echo "============================================================"
         echo "  blockhost-provisioner-proxmox installed successfully!"
